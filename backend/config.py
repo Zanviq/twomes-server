@@ -78,7 +78,7 @@ class Settings:
 
         # ── AI ──
         self.gemini_api_key: str | None = os.getenv("GEMINI_API_KEY") or None
-        self.gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+        self.gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
         self.ai_max_steps: int = int(os.getenv("AI_MAX_STEPS", "8"))
 
         # ── Google Calendar (선택) ──

@@ -10,7 +10,7 @@ import { Graph } from "./pages/Graph";
 import { Calendar } from "./pages/Calendar";
 import { Settings } from "./pages/Settings";
 import { Profile } from "./pages/Profile";
-import { Placeholder } from "./pages/Placeholder";
+import { Assistant } from "./pages/Assistant";
 import { Toaster } from "./components/ui/Toaster";
 
 function AuthedRoutes() {
@@ -21,7 +21,7 @@ function AuthedRoutes() {
       <Route path="/notes" element={<Notes />} />
       <Route path="/graph" element={<Graph />} />
       <Route path="/calendar" element={<Calendar />} />
-      <Route path="/assistant" element={<Placeholder title="AI 비서" />} />
+      <Route path="/assistant" element={<Assistant />} />
       <Route path="/settings" element={<Settings />} />
       <Route path="/profile" element={<Profile />} />
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -3,7 +3,7 @@ uvicorn[standard]==0.34.0
 python-multipart==0.0.20
 psutil==6.1.1
 pydantic==2.10.4
-google-generativeai==0.8.3
+google-genai==1.8.0
 itsdangerous==2.2.0
 python-dotenv==1.0.1
 google-api-python-client==2.156.0

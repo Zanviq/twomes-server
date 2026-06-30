@@ -1,0 +1,187 @@
+import { useEffect, useRef, useState } from "react";
+import { Bot, Send, Loader2, CheckCircle2, XCircle, Sparkles } from "lucide-react";
+import { Shell } from "../components/layout/Shell";
+import { MarkdownView } from "../components/notes/MarkdownView";
+import { aiChatStream, api, AiEvent } from "../lib/api";
+import { toast } from "../store/toast";
+
+interface Step {
+  name: string;
+  ok?: boolean;
+  message?: string;
+}
+interface Msg {
+  role: "user" | "assistant";
+  text: string;
+  steps: Step[];
+  pending?: boolean;
+}
+
+const SKILL_LABEL: Record<string, string> = {
+  think: "생각 정리",
+  list_files: "파일 목록",
+  read_file: "파일 읽기",
+  search_files: "파일 검색",
+  list_notes: "노트 목록",
+  read_note: "노트 읽기",
+  write_note: "노트 작성",
+  list_calendar_events: "일정 조회",
+  create_calendar_event: "일정 생성",
+};
+
+const SUGGESTIONS = [
+  "내 노트 목록 보여줘",
+  "이번 주 일정 정리해줘",
+  "회의 준비 체크리스트 노트 만들어줘",
+  "내일 오후 3시에 운동 일정 잡아줘",
+];
+
+export function Assistant() {
+  const [messages, setMessages] = useState<Msg[]>([]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const endRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    api.aiStatus().then((s) => setEnabled(s.enabled)).catch(() => setEnabled(false));
+  }, []);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const send = async (text: string) => {
+    if (!text.trim() || busy) return;
+    setInput("");
+    setBusy(true);
+    setMessages((m) => [
+      ...m,
+      { role: "user", text, steps: [] },
+      { role: "assistant", text: "", steps: [], pending: true },
+    ]);
+
+    const patchLast = (fn: (m: Msg) => Msg) =>
+      setMessages((arr) => arr.map((m, i) => (i === arr.length - 1 ? fn(m) : m)));
+
+    try {
+      await aiChatStream(text, (e: AiEvent) => {
+        if (e.type === "tool_call") {
+          patchLast((m) => ({ ...m, steps: [...m.steps, { name: e.name! }] }));
+        } else if (e.type === "tool_result") {
+          patchLast((m) => {
+            const steps = [...m.steps];
+            for (let i = steps.length - 1; i >= 0; i--) {
+              if (steps[i].name === e.name && steps[i].ok === undefined) {
+                steps[i] = { ...steps[i], ok: e.ok, message: e.message };
+                break;
+              }
+            }
+            return { ...m, steps };
+          });
+        } else if (e.type === "text") {
+          patchLast((m) => ({ ...m, text: e.text ?? "" }));
+        } else if (e.type === "error") {
+          patchLast((m) => ({ ...m, text: `오류: ${e.message}` }));
+        }
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "AI 오류");
+      patchLast((m) => ({ ...m, text: "요청 처리 중 오류가 발생했습니다." }));
+    } finally {
+      patchLast((m) => ({ ...m, pending: false }));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Shell title="AI 비서">
+      <div className="mx-auto flex h-[calc(100vh-9rem)] max-w-3xl flex-col">
+        {enabled === false && (
+          <div className="mb-3 rounded-md border border-warning/30 bg-warning/10 px-4 py-2.5 text-[13px] text-warning">
+            GEMINI_API_KEY가 설정되지 않아 AI가 비활성화되어 있습니다. (.env 확인)
+          </div>
+        )}
+
+        <div className="flex-1 space-y-4 overflow-auto pr-1">
+          {messages.length === 0 && (
+            <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
+              <div className="grid h-14 w-14 place-items-center rounded-xl bg-accent-muted text-accent">
+                <Sparkles size={26} />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">무엇을 도와드릴까요?</p>
+                <p className="mt-1 text-[13px] text-fg-muted">파일·노트·일정을 자동으로 처리합니다</p>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2">
+                {SUGGESTIONS.map((s) => (
+                  <button key={s} onClick={() => send(s)}
+                    className="rounded-full border border-line bg-surface px-3 py-1.5 text-[12px] text-fg2 hover:border-accent hover:text-accent">
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {messages.map((m, i) =>
+            m.role === "user" ? (
+              <div key={i} className="flex justify-end">
+                <div className="max-w-[80%] rounded-lg rounded-br-sm bg-accent px-4 py-2.5 text-[13.5px] text-accent-contrast">
+                  {m.text}
+                </div>
+              </div>
+            ) : (
+              <div key={i} className="flex gap-2.5">
+                <div className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-accent-muted text-accent">
+                  <Bot size={15} />
+                </div>
+                <div className="min-w-0 flex-1 space-y-2">
+                  {m.steps.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {m.steps.map((s, j) => (
+                        <span key={j}
+                          className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11.5px] ${
+                            s.ok === false ? "border-danger/30 text-danger"
+                            : s.ok ? "border-accent/30 bg-accent-muted text-accent-fg"
+                            : "border-line text-fg-muted"}`}>
+                          {s.ok === undefined ? <Loader2 size={11} className="animate-spin" />
+                            : s.ok ? <CheckCircle2 size={11} /> : <XCircle size={11} />}
+                          {SKILL_LABEL[s.name] ?? s.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {m.text ? (
+                    <div className="card px-4 py-2.5">
+                      <MarkdownView content={m.text} onWikiClick={() => {}} />
+                    </div>
+                  ) : m.pending && m.steps.length === 0 ? (
+                    <div className="inline-flex items-center gap-2 text-[13px] text-fg-muted">
+                      <Loader2 size={14} className="animate-spin" /> 생각 중…
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ),
+          )}
+          <div ref={endRef} />
+        </div>
+
+        <div className="mt-3 flex gap-2">
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && send(input)}
+            placeholder="메시지를 입력하세요…"
+            disabled={busy}
+            className="input flex-1"
+          />
+          <button onClick={() => send(input)} disabled={busy || !input.trim()} className="btn btn-primary px-4">
+            {busy ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+          </button>
+        </div>
+      </div>
+    </Shell>
+  );
+}

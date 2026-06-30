@@ -146,6 +146,38 @@ def test_calendar_lifecycle():
     assert client.delete(f"/api/calendar/events/{eid}").status_code == 200
 
 
+def test_ai_react_chains_skills():
+    from backend.ai import orchestrator
+    from backend.ai.orchestrator import LLMResult
+    from backend.auth import SessionUser
+    from backend.config import get_settings
+    from backend.storage import notes_root
+    from backend import calendar_store
+
+    s = get_settings()
+    user = SessionUser(username="tester", display_name="Tester", expires_at=0, remaining=0)
+
+    class FakeLLM:
+        def __init__(self):
+            self.n = 0
+
+        def chat(self, contents, catalog, system):
+            self.n += 1
+            if self.n == 1:
+                return LLMResult(text="", tool_use={"name": "write_note", "args": {"scope": "me", "title": "plan", "content": "# plan\n[[meeting]]"}})
+            if self.n == 2:
+                return LLMResult(text="", tool_use={"name": "create_calendar_event", "args": {"title": "미팅", "start": "2026-07-05T10:00:00"}})
+            return LLMResult(text="노트와 일정을 만들었습니다.", tool_use=None)
+
+    events = list(orchestrator.run(user, s, "계획 노트 만들고 일정 잡아줘", "2026-07-01", llm=FakeLLM()))
+    types = [e["type"] for e in events]
+    assert types.count("tool_call") == 2  # 스킬 2개 연속 실행
+    assert any(e["type"] == "text" and "일정" in e["text"] for e in events)
+    # 실제 생성 확인 (사용자 스코프)
+    assert (notes_root("me", user, s) / "plan.md").exists()
+    assert any(ev["title"] == "미팅" for ev in calendar_store.list_events(user, s))
+
+
 def test_scope_isolation():
     # tester가 개인(me) 스코프에 파일 업로드
     a = TestClient(app)
@@ -178,5 +210,6 @@ if __name__ == "__main__":
     test_notes_wikilinks_and_graph()
     test_settings_get_patch()
     test_calendar_lifecycle()
+    test_ai_react_chains_skills()
     test_scope_isolation()
     print("ALL SMOKE TESTS PASSED")

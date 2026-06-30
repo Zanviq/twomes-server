@@ -127,7 +127,54 @@ export const api = {
     req<{ settings: UserSettings; defaults: UserSettings }>("/api/settings"),
   patchSettings: (changes: Record<string, unknown>) =>
     req<{ settings: UserSettings }>("/api/settings", jsonInit("PATCH", { changes })),
+
+  // ── AI ──
+  aiStatus: () => req<{ enabled: boolean; model: string }>("/api/ai/status"),
 };
+
+export interface AiEvent {
+  type: "tool_call" | "tool_result" | "text" | "done" | "error";
+  name?: string;
+  args?: Record<string, unknown>;
+  ok?: boolean;
+  message?: string;
+  text?: string;
+}
+
+/** AI 채팅 SSE 스트림. 이벤트마다 onEvent 호출. */
+export async function aiChatStream(
+  message: string,
+  onEvent: (e: AiEvent) => void,
+): Promise<void> {
+  const res = await fetch(`${BASE}/api/ai/chat`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message }),
+  });
+  if (!res.ok || !res.body) {
+    throw new ApiError(res.status, "AI 요청 실패");
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const parts = buf.split("\n\n");
+    buf = parts.pop() ?? "";
+    for (const part of parts) {
+      const line = part.split("\n").find((l) => l.startsWith("data:"));
+      if (!line) continue;
+      try {
+        onEvent(JSON.parse(line.slice(5).trim()));
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+}
 
 export interface UserSettings {
   ai: { tone: string; max_steps: number; confirm_mutations: boolean };
