@@ -1,0 +1,81 @@
+/* Plant-Counselor 영감 디자인 토큰 — 따뜻한 크림/올리브그린.
+   값은 "R G B" 트리플렛(Tailwind opacity 수정자 지원). data-theme로 전환. */
+
+:root,
+[data-theme="light"] {
+  --bg: 245 242 235;
+  --bg-elevated: 255 255 255;
+  --bg-subtle: 239 236 228;
+  --bg-muted: 232 228 219;
+  --bg-hover: 226 222 213;
+  --bg-overlay: rgba(40, 38, 30, 0.3);
+
+  --sidebar: 61 74 48;
+  --sidebar-fg: 197 205 184;
+  --sidebar-fg-active: 255 255 255;
+  --sidebar-icon: rgba(255, 255, 255, 0.1);
+  --sidebar-icon-active: rgba(255, 255, 255, 0.18);
+
+  --line: 221 217 206;
+  --line-strong: 200 195 181;
+
+  --fg: 42 42 36;
+  --fg2: 74 74 64;
+  --fg-muted: 122 122 110;
+  --fg-subtle: 165 165 152;
+
+  --accent: 92 107 63;
+  --accent-hover: 77 90 51;
+  --accent-soft: 216 224 200;
+  --accent-muted: 237 241 228;
+  --accent-fg: 61 74 42;
+  --accent-contrast: 255 255 255;
+
+  --positive: 92 107 63;
+  --warning: 196 154 42;
+  --danger: 181 74 58;
+  --info: 74 106 138;
+
+  --shadow-sm: 0 1px 3px rgba(60, 50, 30, 0.06);
+  --shadow-md: 0 4px 12px rgba(60, 50, 30, 0.07);
+  --shadow-lg: 0 8px 24px rgba(60, 50, 30, 0.1);
+}
+
+[data-theme="dark"] {
+  --bg: 26 29 22;
+  --bg-elevated: 34 38 28;
+  --bg-subtle: 40 44 34;
+  --bg-muted: 46 50 40;
+  --bg-hover: 53 58 46;
+  --bg-overlay: rgba(0, 0, 0, 0.55);
+
+  --sidebar: 22 26 16;
+  --sidebar-fg: 138 148 120;
+  --sidebar-fg-active: 216 224 200;
+  --sidebar-icon: rgba(255, 255, 255, 0.06);
+  --sidebar-icon-active: rgba(255, 255, 255, 0.12);
+
+  --line: 54 58 46;
+  --line-strong: 70 74 62;
+
+  --fg: 232 228 219;
+  --fg2: 197 192 180;
+  --fg-muted: 138 138 126;
+  --fg-subtle: 90 90 80;
+
+  --accent: 139 170 90;
+  --accent-hover: 160 191 106;
+  --accent-soft: 42 51 32;
+  --accent-muted: 30 38 24;
+  --accent-fg: 197 216 160;
+  --accent-contrast: 26 29 22;
+
+  --positive: 139 170 90;
+  --warning: 212 170 58;
+  --danger: 208 96 80;
+  --info: 90 138 176;
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
+}

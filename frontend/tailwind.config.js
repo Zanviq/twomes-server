@@ -1,65 +1,64 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  darkMode: ['selector', '[data-theme="dark"]'],
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
-        // Mission Control Deck — near-black carbon + phosphor lime
-        carbon: {
-          900: "#08090b",
-          800: "#0c0e11",
-          700: "#121519",
-          600: "#191d23",
-          500: "#22272e",
-        },
-        phosphor: {
-          DEFAULT: "#c6f432",
-          dim: "#9bbf2a",
-          glow: "#d7ff5a",
-        },
-        signal: {
-          amber: "#ffb84d",
-          red: "#ff5d5d",
-          cyan: "#54e6ff",
-        },
-        ash: {
-          100: "#e9edf2",
-          300: "#aab3bf",
-          500: "#6b7480",
-          700: "#3a4048",
-        },
+        bg: "rgb(var(--bg) / <alpha-value>)",
+        surface: "rgb(var(--bg-elevated) / <alpha-value>)",
+        subtle: "rgb(var(--bg-subtle) / <alpha-value>)",
+        muted: "rgb(var(--bg-muted) / <alpha-value>)",
+        hovered: "rgb(var(--bg-hover) / <alpha-value>)",
+        sidebar: "rgb(var(--sidebar) / <alpha-value>)",
+        "sidebar-fg": "rgb(var(--sidebar-fg) / <alpha-value>)",
+        "sidebar-fg-active": "rgb(var(--sidebar-fg-active) / <alpha-value>)",
+        line: "rgb(var(--line) / <alpha-value>)",
+        "line-strong": "rgb(var(--line-strong) / <alpha-value>)",
+        fg: "rgb(var(--fg) / <alpha-value>)",
+        fg2: "rgb(var(--fg2) / <alpha-value>)",
+        "fg-muted": "rgb(var(--fg-muted) / <alpha-value>)",
+        "fg-subtle": "rgb(var(--fg-subtle) / <alpha-value>)",
+        accent: "rgb(var(--accent) / <alpha-value>)",
+        "accent-hover": "rgb(var(--accent-hover) / <alpha-value>)",
+        "accent-soft": "rgb(var(--accent-soft) / <alpha-value>)",
+        "accent-muted": "rgb(var(--accent-muted) / <alpha-value>)",
+        "accent-fg": "rgb(var(--accent-fg) / <alpha-value>)",
+        "accent-contrast": "rgb(var(--accent-contrast) / <alpha-value>)",
+        positive: "rgb(var(--positive) / <alpha-value>)",
+        warning: "rgb(var(--warning) / <alpha-value>)",
+        danger: "rgb(var(--danger) / <alpha-value>)",
+        info: "rgb(var(--info) / <alpha-value>)",
       },
       fontFamily: {
-        display: ['"Archivo"', "system-ui", "sans-serif"],
-        sans: ['"IBM Plex Sans"', "system-ui", "sans-serif"],
-        mono: ['"IBM Plex Mono"', "ui-monospace", "monospace"],
+        sans: ['"Pretendard Variable"', "Pretendard", "system-ui", "sans-serif"],
+        mono: ['"JetBrains Mono"', "ui-monospace", "monospace"],
+      },
+      borderRadius: {
+        xs: "4px",
+        sm: "6px",
+        md: "10px",
+        lg: "14px",
+        xl: "18px",
+      },
+      boxShadow: {
+        sm: "var(--shadow-sm)",
+        md: "var(--shadow-md)",
+        lg: "var(--shadow-lg)",
       },
       keyframes: {
-        "fade-up": {
-          "0%": { opacity: "0", transform: "translateY(12px)" },
+        fadeIn: {
+          "0%": { opacity: "0", transform: "translateY(4px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
         },
-        "scan": {
-          "0%": { transform: "translateY(-100%)" },
-          "100%": { transform: "translateY(100%)" },
-        },
-        "pulse-dot": {
-          "0%, 100%": { opacity: "1" },
-          "50%": { opacity: "0.25" },
-        },
-        "sweep": {
-          "0%": { strokeDashoffset: "var(--circ)" },
-          "100%": { strokeDashoffset: "var(--target)" },
+        slideInRight: {
+          "0%": { opacity: "0", transform: "translateX(12px)" },
+          "100%": { opacity: "1", transform: "translateX(0)" },
         },
       },
       animation: {
-        "fade-up": "fade-up 0.6s cubic-bezier(0.16,1,0.3,1) both",
-        scan: "scan 4s linear infinite",
-        "pulse-dot": "pulse-dot 1.6s ease-in-out infinite",
-      },
-      boxShadow: {
-        glow: "0 0 24px -4px rgba(198,244,50,0.35)",
-        panel: "0 1px 0 0 rgba(255,255,255,0.03) inset, 0 16px 40px -24px rgba(0,0,0,0.9)",
+        in: "fadeIn 0.18s ease-out both",
+        "in-right": "slideInRight 0.22s cubic-bezier(0.32,0.72,0,1) both",
       },
     },
   },
