@@ -43,7 +43,7 @@ def issue_token(username: str, settings: Settings | None = None) -> str:
 
 
 def verify_token(token: str, settings: Settings | None = None) -> dict | None:
-    """토큰 검증. 유효하면 {'username', 'expires_at'} 반환, 아니면 None."""
+    """토큰 검증. 유효하면 {'username'} 반환, 만료/위조면 None."""
     settings = settings or get_settings()
     try:
         # itsdangerous가 발급시각을 토큰에 포함 → max_age로 만료 강제

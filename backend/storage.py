@@ -15,7 +15,7 @@ from fastapi import HTTPException
 
 from .auth import SessionUser
 from .config import Settings
-from .security_paths import safe_join, to_rel
+from .security_paths import safe_join
 
 VALID_SCOPES = ("common", "me")
 
@@ -47,7 +47,3 @@ def notes_root(scope: str, user: SessionUser, settings: Settings) -> Path:
 def resolve(scope: str, rel: str, user: SessionUser, settings: Settings) -> Path:
     """파일 스코프 내에서 상대경로를 안전하게 해석."""
     return safe_join(scope_root(scope, user, settings), rel)
-
-
-def rel_of(scope: str, target: Path, user: SessionUser, settings: Settings) -> str:
-    return to_rel(scope_root(scope, user, settings), target)

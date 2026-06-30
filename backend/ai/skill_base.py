@@ -31,7 +31,6 @@ class SkillBase(ABC):
     name: str = ""
     description: str = ""
     parameters: dict = {}
-    mutating: bool = False  # 데이터 변경 스킬 여부
 
     @abstractmethod
     def run(self, args: dict, ctx: SkillContext) -> SkillResult: ...

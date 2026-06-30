@@ -178,6 +178,26 @@ def test_ai_react_chains_skills():
     assert any(ev["title"] == "미팅" for ev in calendar_store.list_events(user, s))
 
 
+def test_ai_blocks_sensitive_files():
+    from backend.ai.skill_base import SkillContext
+    from backend.ai.skills import ReadFile, ReadNote
+    from backend.auth import SessionUser
+    from backend.config import get_settings
+
+    s = get_settings()
+    ctx = SkillContext(
+        user=SessionUser(username="tester", display_name="T", expires_at=0, remaining=0),
+        settings=s,
+    )
+    r = ReadFile().run({"scope": "me", "path": "password.txt"}, ctx)
+    assert r.ok is False and r.error_code == "blocked"
+    r2 = ReadNote().run({"scope": "me", "title": "내 비밀번호"}, ctx)
+    assert r2.ok is False and r2.error_code == "blocked"
+    # .env는 텍스트 확장자에서 제외되어 AI가 읽지 못함
+    from backend.gemini_client import TEXT_EXTENSIONS
+    assert ".env" not in TEXT_EXTENSIONS
+
+
 def test_scope_isolation():
     # tester가 개인(me) 스코프에 파일 업로드
     a = TestClient(app)
@@ -211,5 +231,6 @@ if __name__ == "__main__":
     test_settings_get_patch()
     test_calendar_lifecycle()
     test_ai_react_chains_skills()
+    test_ai_blocks_sensitive_files()
     test_scope_isolation()
     print("ALL SMOKE TESTS PASSED")

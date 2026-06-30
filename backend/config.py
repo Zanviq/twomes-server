@@ -66,6 +66,10 @@ class Settings:
         self.users: list[UserAccount] = _parse_users(os.getenv("AUTH_USERS", ""))
         self.session_secret: str = os.getenv("SESSION_SECRET", "")
         self.session_ttl: int = int(os.getenv("SESSION_TTL_SECONDS", "3600"))
+        # HTTPS(터널/리버스프록시) 운영 시 true 권장 — 쿠키를 암호화 연결로만 전송.
+        self.cookie_secure: bool = os.getenv("COOKIE_SECURE", "false").lower() in (
+            "1", "true", "yes",
+        )
 
         # ── CORS (자격증명 사용 → 와일드카드 금지) ──
         self.cors_origins: list[str] = [

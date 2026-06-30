@@ -18,15 +18,8 @@ class SkillRegistry:
     def get(self, name: str) -> SkillBase | None:
         return self._skills.get(name)
 
-    def list(self) -> list[SkillBase]:
-        return list(self._skills.values())
-
     def build_catalog(self) -> list[dict]:
         return [s.to_tool_spec() for s in self._skills.values()]
-
-    def is_mutating(self, name: str) -> bool:
-        s = self.get(name)
-        return bool(s and s.mutating)
 
     def dispatch(self, name: str, args: dict, ctx: SkillContext) -> SkillResult:
         skill = self.get(name)

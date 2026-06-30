@@ -14,6 +14,18 @@ _SCOPE_PROP = {
 }
 _MAX_READ = 20000
 
+# AI(외부 Gemini)로 내용이 전송되면 안 되는 민감 키워드 — 파일명/경로 기준.
+SENSITIVE_KEYWORDS = {
+    "비밀", "민감", "주민등록", "주민번호", "계좌", "여권", "비밀번호",
+    "secret", "private", "password", "passwd", "ssn", "card", "credential",
+    "token", "apikey", "api_key", ".key", ".pem",
+}
+
+
+def _is_sensitive(rel: str) -> bool:
+    low = rel.lower()
+    return any(kw.lower() in low for kw in SENSITIVE_KEYWORDS)
+
 
 # ── 사고/계획 ──
 class ThinkSkill(SkillBase):
@@ -64,6 +76,8 @@ class ReadFile(SkillBase):
     }
 
     def run(self, args, ctx):
+        if _is_sensitive(args["path"]):
+            return SkillResult(ok=False, message="민감 파일로 판단되어 AI 읽기가 차단되었습니다.", error_code="blocked")
         target = resolve(args["scope"], args["path"], ctx.user, ctx.settings)
         if not target.exists() or not target.is_file():
             return SkillResult(ok=False, message="파일을 찾을 수 없습니다.", error_code="not_found")
@@ -88,7 +102,7 @@ class SearchFiles(SkillBase):
         hits = [
             to_rel(root, p)
             for p in root.rglob("*")
-            if p.is_file() and q in p.name.lower()
+            if p.is_file() and q in p.name.lower() and not _is_sensitive(to_rel(root, p))
         ][:50]
         return SkillResult(ok=True, message=f"{len(hits)}개 검색됨", data={"matches": hits})
 
@@ -115,6 +129,8 @@ class ReadNote(SkillBase):
     }
 
     def run(self, args, ctx):
+        if _is_sensitive(args["title"]):
+            return SkillResult(ok=False, message="민감 노트로 판단되어 AI 읽기가 차단되었습니다.", error_code="blocked")
         root = notes_root(args["scope"], ctx.user, ctx.settings)
         target = safe_join(root, f"{args['title']}.md")
         if not target.exists():
@@ -129,7 +145,6 @@ class ReadNote(SkillBase):
 class WriteNote(SkillBase):
     name = "write_note"
     description = "노트를 만들거나 덮어쓴다(마크다운, [[위키링크]] 가능)."
-    mutating = True
     parameters = {
         "type": "object",
         "properties": {
@@ -170,7 +185,6 @@ class ListCalendarEvents(SkillBase):
 class CreateCalendarEvent(SkillBase):
     name = "create_calendar_event"
     description = "새 일정(이벤트)을 만든다. 사용자가 일정을 잡아달라고 하면 사용."
-    mutating = True
     parameters = {
         "type": "object",
         "properties": {

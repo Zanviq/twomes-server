@@ -62,7 +62,13 @@ def list_dir(
         raise HTTPException(status_code=404, detail="경로를 찾을 수 없습니다.")
     if not target.is_dir():
         raise HTTPException(status_code=400, detail="디렉토리가 아닙니다.")
-    entries = [_entry(root, c) for c in target.iterdir()]
+    entries = []
+    for c in target.iterdir():
+        try:
+            entries.append(_entry(root, c))
+        except OSError:
+            # 나열 도중 사라진 항목은 건너뜀 (TOCTOU)
+            continue
     entries.sort(key=lambda e: (not e.is_dir, e.name.lower()))
     return ListResponse(path=to_rel(root, target), entries=entries)
 

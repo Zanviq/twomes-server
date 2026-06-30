@@ -18,8 +18,14 @@ from ..config import Settings, get_settings
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
 
+class ChatTurn(BaseModel):
+    role: str  # user | assistant
+    text: str
+
+
 class ChatRequest(BaseModel):
     message: str
+    history: list[ChatTurn] = []
 
 
 @router.get("/status")
@@ -37,9 +43,13 @@ def chat(
     """ReAct 비서. SSE로 thought/tool_call/tool_result/text/done 이벤트 스트리밍."""
     today = date.today().isoformat()
 
+    history = [{"role": t.role, "text": t.text} for t in body.history][-12:]
+
     def gen():
         try:
-            for ev in orchestrator.run(user, settings, body.message, today):
+            for ev in orchestrator.run(
+                user, settings, body.message, today, history=history
+            ):
                 yield orchestrator.sse_format(ev)
         except Exception as e:  # noqa: BLE001
             yield orchestrator.sse_format({"type": "error", "message": str(e)})

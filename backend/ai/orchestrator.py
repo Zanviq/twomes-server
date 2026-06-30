@@ -81,12 +81,20 @@ def run(
     llm = llm or GeminiLLM(settings)
     ctx = SkillContext(user=user, settings=settings)
     catalog = registry.build_catalog()
-    system = build_system(user, _tone(user, settings), today)
 
-    contents: list[dict] = list(history or [])
+    prefs = _user_ai_prefs(user, settings)
+    system = build_system(user, prefs["tone"], today)
+    max_steps = max(1, min(16, int(prefs["max_steps"])))
+
+    # 이전 대화(멀티턴): [{role: user|assistant, text}] → genai 형식
+    contents: list[dict] = []
+    for turn in history or []:
+        role = "model" if turn.get("role") == "assistant" else "user"
+        text = str(turn.get("text", ""))
+        if text:
+            contents.append({"role": role, "parts": [{"text": text}]})
     contents.append({"role": "user", "parts": [{"text": message}]})
 
-    max_steps = max(1, min(16, settings.ai_max_steps))
     final_text = ""
 
     for step in range(max_steps):
@@ -94,7 +102,8 @@ def run(
 
         if result.tool_use:
             name = result.tool_use["name"]
-            args = result.tool_use.get("args", {})
+            # proto Map/Repeated 값을 순수 파이썬으로 정규화 (재전송 직렬화 안전)
+            args = _plain(result.tool_use.get("args", {}))
             yield {"type": "tool_call", "name": name, "args": args}
 
             skill_result = registry.dispatch(name, args, ctx)
@@ -135,13 +144,32 @@ def run(
     yield {"type": "done"}
 
 
-def _tone(user, settings: Settings) -> str:
+def _user_ai_prefs(user, settings: Settings) -> dict:
     try:
         from .. import user_settings
 
-        return user_settings.load(user, settings).get("ai", {}).get("tone", "assistant")
+        ai = user_settings.load(user, settings).get("ai", {})
+        return {
+            "tone": ai.get("tone", "assistant"),
+            "max_steps": ai.get("max_steps", settings.ai_max_steps),
+        }
     except Exception:  # noqa: BLE001
-        return "assistant"
+        return {"tone": "assistant", "max_steps": settings.ai_max_steps}
+
+
+def _plain(obj):
+    """proto MapComposite/RepeatedComposite 등을 순수 dict/list로 변환."""
+    if isinstance(obj, dict):
+        return {k: _plain(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_plain(v) for v in obj]
+    try:
+        # MapComposite/RepeatedComposite는 items()/iter 지원
+        if hasattr(obj, "items"):
+            return {k: _plain(v) for k, v in obj.items()}
+    except Exception:  # noqa: BLE001
+        pass
+    return obj
 
 
 def sse_format(event: dict) -> str:

@@ -5,12 +5,12 @@
 """
 from __future__ import annotations
 
-import json
 import uuid
 from pathlib import Path
 
 from fastapi import HTTPException
 
+from . import json_store
 from .auth import SessionUser
 from .config import Settings
 
@@ -22,20 +22,12 @@ def _events_path(user: SessionUser, settings: Settings) -> Path:
 
 
 def _load(user: SessionUser, settings: Settings) -> list[dict]:
-    p = _events_path(user, settings)
-    if not p.exists():
-        return []
-    try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-        return data if isinstance(data, list) else []
-    except (json.JSONDecodeError, OSError):
-        return []
+    data = json_store.read_json(_events_path(user, settings), [])
+    return data if isinstance(data, list) else []
 
 
 def _save(events: list[dict], user: SessionUser, settings: Settings) -> None:
-    _events_path(user, settings).write_text(
-        json.dumps(events, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    json_store.write_atomic(_events_path(user, settings), events)
 
 
 def list_events(
@@ -56,36 +48,39 @@ def list_events(
 
 
 def create_event(user: SessionUser, settings: Settings, payload: dict) -> dict:
-    events = _load(user, settings)
-    event = {
-        "id": uuid.uuid4().hex,
-        "title": str(payload.get("title", "")).strip() or "(제목 없음)",
-        "description": str(payload.get("description", "")),
-        "start": payload["start"],
-        "end": payload.get("end", payload["start"]),
-        "allDay": bool(payload.get("allDay", False)),
-        "color": payload.get("color", "2"),
-    }
-    events.append(event)
-    _save(events, user, settings)
-    return event
+    with json_store.lock_for(_events_path(user, settings)):
+        events = _load(user, settings)
+        event = {
+            "id": uuid.uuid4().hex,
+            "title": str(payload.get("title", "")).strip() or "(제목 없음)",
+            "description": str(payload.get("description", "")),
+            "start": payload["start"],
+            "end": payload.get("end", payload["start"]),
+            "allDay": bool(payload.get("allDay", False)),
+            "color": payload.get("color", "2"),
+        }
+        events.append(event)
+        _save(events, user, settings)
+        return event
 
 
 def update_event(user: SessionUser, settings: Settings, eid: str, payload: dict) -> dict:
-    events = _load(user, settings)
-    for e in events:
-        if e["id"] == eid:
-            for k in ("title", "description", "start", "end", "allDay", "color"):
-                if k in payload and payload[k] is not None:
-                    e[k] = payload[k]
-            _save(events, user, settings)
-            return e
+    with json_store.lock_for(_events_path(user, settings)):
+        events = _load(user, settings)
+        for e in events:
+            if e["id"] == eid:
+                for k in ("title", "description", "start", "end", "allDay", "color"):
+                    if k in payload and payload[k] is not None:
+                        e[k] = payload[k]
+                _save(events, user, settings)
+                return e
     raise HTTPException(status_code=404, detail="이벤트를 찾을 수 없습니다.")
 
 
 def delete_event(user: SessionUser, settings: Settings, eid: str) -> None:
-    events = _load(user, settings)
-    new = [e for e in events if e["id"] != eid]
-    if len(new) == len(events):
-        raise HTTPException(status_code=404, detail="이벤트를 찾을 수 없습니다.")
-    _save(new, user, settings)
+    with json_store.lock_for(_events_path(user, settings)):
+        events = _load(user, settings)
+        new = [e for e in events if e["id"] != eid]
+        if len(new) == len(events):
+            raise HTTPException(status_code=404, detail="이벤트를 찾을 수 없습니다.")
+        _save(new, user, settings)

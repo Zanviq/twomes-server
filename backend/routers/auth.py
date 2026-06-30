@@ -47,7 +47,7 @@ def login(
         max_age=settings.session_ttl,
         httponly=True,
         samesite="lax",
-        secure=False,  # https 운영 시 리버스프록시/터널에서 처리
+        secure=settings.cookie_secure,  # HTTPS 운영 시 COOKIE_SECURE=true
         path="/",
     )
     acc = settings.find_user(req.username)
@@ -61,9 +61,11 @@ def login(
 
 
 @router.post("/logout")
-def logout(response: Response):
+def logout(response: Response, settings: Settings = Depends(get_settings)):
     """세션 쿠키 제거."""
-    response.delete_cookie(COOKIE_NAME, path="/")
+    response.delete_cookie(
+        COOKIE_NAME, path="/", samesite="lax", secure=settings.cookie_secure
+    )
     return {"ok": True}
 
 

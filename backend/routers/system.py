@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import time
+from pathlib import Path
 
 import psutil
 
@@ -42,8 +43,12 @@ def system_stats():
     settings = get_settings()
 
     vm = psutil.virtual_memory()
-    # 디스크 사용량은 사용자 파일 저장소(HDD) 기준.
-    disk_path = settings.storage_root if settings.storage_root.exists() else "/"
+    # 디스크 사용량은 사용자 파일 저장소(HDD) 기준. 없으면 OS 루트(크로스플랫폼).
+    disk_path = (
+        settings.storage_root
+        if settings.storage_root.exists()
+        else Path(os.path.abspath(os.sep))
+    )
     du = psutil.disk_usage(str(disk_path))
 
     try:

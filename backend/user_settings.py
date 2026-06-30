@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 import copy
-import json
 from pathlib import Path
 from typing import Any
 
+from . import json_store
 from .auth import SessionUser
 from .config import Settings
 
@@ -13,7 +13,6 @@ DEFAULTS: dict[str, Any] = {
     "ai": {
         "tone": "assistant",  # counselor | assistant | friend
         "max_steps": 8,
-        "confirm_mutations": False,
     },
     "calendar": {
         "default_color": "2",
@@ -51,20 +50,13 @@ def _deep_merge(base: dict, patch: dict) -> dict:
 
 
 def load(user: SessionUser, settings: Settings) -> dict:
-    p = _path(user, settings)
-    stored: dict = {}
-    if p.exists():
-        try:
-            stored = json.loads(p.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            stored = {}
+    stored = json_store.read_json(_path(user, settings), {})
     return _deep_merge(DEFAULTS, stored if isinstance(stored, dict) else {})
 
 
 def patch(user: SessionUser, settings: Settings, changes: dict) -> dict:
-    current = load(user, settings)
-    merged = _deep_merge(current, changes)
-    _path(user, settings).write_text(
-        json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    p = _path(user, settings)
+    with json_store.lock_for(p):
+        merged = _deep_merge(load(user, settings), changes)
+        json_store.write_atomic(p, merged)
     return merged

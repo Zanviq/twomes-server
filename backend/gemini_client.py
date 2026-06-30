@@ -5,10 +5,11 @@ Gemini 호출은 ai/orchestrator.py(google-genai 신 SDK)에서 처리한다.
 """
 from __future__ import annotations
 
-# 텍스트로 읽을 수 있는 확장자 (AI 읽기/요약 대상)
+# 텍스트로 읽을 수 있는 확장자 (AI 읽기 대상).
+# 주의: 비밀이 담기는 .env / 키 파일은 의도적으로 제외 — 외부(Gemini) 유출 방지.
 TEXT_EXTENSIONS = {
     ".txt", ".md", ".markdown", ".py", ".js", ".ts", ".tsx", ".jsx",
     ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".csv", ".log",
     ".html", ".css", ".xml", ".sh", ".c", ".cpp", ".h", ".java", ".go",
-    ".rs", ".sql", ".env",
+    ".rs", ".sql",
 }
