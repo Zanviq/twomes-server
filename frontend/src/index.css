@@ -137,4 +137,41 @@
   .prose-twoems hr {
     @apply my-4 border-line;
   }
+
+  /* FullCalendar 테마 매핑 */
+  .fc-twoems {
+    --fc-border-color: rgb(var(--line));
+    --fc-page-bg-color: transparent;
+    --fc-neutral-bg-color: rgb(var(--bg-subtle));
+    --fc-today-bg-color: rgb(var(--accent-muted));
+    --fc-button-bg-color: rgb(var(--bg-elevated));
+    --fc-button-border-color: rgb(var(--line));
+    --fc-button-text-color: rgb(var(--fg));
+    --fc-button-hover-bg-color: rgb(var(--bg-subtle));
+    --fc-button-hover-border-color: rgb(var(--line-strong));
+    --fc-button-active-bg-color: rgb(var(--accent));
+    --fc-button-active-border-color: rgb(var(--accent));
+    --fc-event-text-color: #fff;
+    --fc-now-indicator-color: rgb(var(--danger));
+  }
+  .fc-twoems .fc {
+    font-size: 13px;
+  }
+  .fc-twoems .fc-toolbar-title {
+    @apply text-base font-bold;
+  }
+  .fc-twoems .fc-button {
+    @apply rounded-md text-[12px] font-medium capitalize shadow-none;
+    padding: 4px 10px;
+  }
+  .fc-twoems .fc-button-active {
+    color: rgb(var(--accent-contrast)) !important;
+  }
+  .fc-twoems .fc-col-header-cell-cushion,
+  .fc-twoems .fc-daygrid-day-number {
+    @apply text-fg2 no-underline;
+  }
+  .fc-twoems a {
+    @apply no-underline;
+  }
 }

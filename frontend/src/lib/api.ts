@@ -106,7 +106,32 @@ export const api = {
     req(`/api/notes/delete?${q({ scope, path })}`, { method: "DELETE" }),
   noteGraph: (scope: Scope) =>
     req<NotesGraph>(`/api/notes/graph?${q({ scope })}`),
+
+  // ── calendar ──
+  calSource: () => req<{ source: string }>("/api/calendar/source"),
+  calEvents: (from?: string, to?: string) => {
+    const p: Record<string, string> = {};
+    if (from) p.from = from;
+    if (to) p.to = to;
+    return req<CalEvent[]>(`/api/calendar/events?${q(p)}`);
+  },
+  calCreate: (e: Partial<CalEvent>) =>
+    req<CalEvent>("/api/calendar/events", jsonInit("POST", e)),
+  calUpdate: (id: string, e: Partial<CalEvent>) =>
+    req<CalEvent>(`/api/calendar/events/${id}`, jsonInit("PUT", e)),
+  calDelete: (id: string) =>
+    req(`/api/calendar/events/${id}`, { method: "DELETE" }),
 };
+
+export interface CalEvent {
+  id: string;
+  title: string;
+  description: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+  color: string;
+}
 
 export interface NoteSummary {
   path: string;

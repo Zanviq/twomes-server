@@ -119,6 +119,22 @@ def test_notes_wikilinks_and_graph():
     assert ("A", "B") in pairs and ("A", "C") in pairs and ("B", "A") in pairs
 
 
+def test_calendar_lifecycle():
+    _login()
+    r = client.post(
+        "/api/calendar/events",
+        json={"title": "회의", "start": "2026-07-02T10:00:00", "end": "2026-07-02T11:00:00"},
+    )
+    assert r.status_code == 200, r.text
+    eid = r.json()["id"]
+    got = client.get("/api/calendar/events").json()
+    assert any(e["id"] == eid for e in got)
+    client.put(f"/api/calendar/events/{eid}", json={"title": "수정된 회의"})
+    after = client.get("/api/calendar/events").json()
+    assert any(e["id"] == eid and e["title"] == "수정된 회의" for e in after)
+    assert client.delete(f"/api/calendar/events/{eid}").status_code == 200
+
+
 def test_scope_isolation():
     # tester가 개인(me) 스코프에 파일 업로드
     a = TestClient(app)
@@ -149,5 +165,6 @@ if __name__ == "__main__":
     test_path_traversal_blocked()
     test_upload_illegal_filename_sanitized()
     test_notes_wikilinks_and_graph()
+    test_calendar_lifecycle()
     test_scope_isolation()
     print("ALL SMOKE TESTS PASSED")

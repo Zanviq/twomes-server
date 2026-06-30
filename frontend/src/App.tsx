@@ -7,6 +7,7 @@ import { Dashboard } from "./pages/Dashboard";
 import { Files } from "./pages/Files";
 import { Notes } from "./pages/Notes";
 import { Graph } from "./pages/Graph";
+import { Calendar } from "./pages/Calendar";
 import { Placeholder } from "./pages/Placeholder";
 import { Toaster } from "./components/ui/Toaster";
 
@@ -17,7 +18,7 @@ function AuthedRoutes() {
       <Route path="/files" element={<Files />} />
       <Route path="/notes" element={<Notes />} />
       <Route path="/graph" element={<Graph />} />
-      <Route path="/calendar" element={<Placeholder title="캘린더" />} />
+      <Route path="/calendar" element={<Calendar />} />
       <Route path="/assistant" element={<Placeholder title="AI 비서" />} />
       <Route path="/settings" element={<Placeholder title="설정" />} />
       <Route path="/profile" element={<Placeholder title="프로필" />} />
