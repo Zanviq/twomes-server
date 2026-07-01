@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import logging
 import re
-import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
@@ -24,6 +23,7 @@ from ..schemas import (
 )
 from ..security_paths import safe_join, to_rel
 from ..storage import resolve, scope_root
+from ..trash import move_to_trash
 
 logger = logging.getLogger("server.files")
 router = APIRouter(prefix="/api/files", tags=["files"])
@@ -180,8 +180,6 @@ def delete(
         raise HTTPException(status_code=400, detail="루트는 삭제할 수 없습니다.")
     if not target.exists():
         raise HTTPException(status_code=404, detail="대상을 찾을 수 없습니다.")
-    if target.is_dir():
-        shutil.rmtree(target)
-    else:
-        target.unlink()
-    return MessageResponse(message=f"삭제: {path}")
+    # 즉시 삭제 대신 개인 휴지통으로 이동 (복원 가능)
+    move_to_trash("file", scope, target, to_rel(root, target), user, settings)
+    return MessageResponse(message=f"휴지통으로 이동: {path}")

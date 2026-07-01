@@ -153,6 +153,58 @@ def test_calendar_recurrence_and_reminders():
     assert isinstance(client.get("/api/calendar/reminders?within=100000").json(), list)
 
 
+def test_notes_folders_and_tree():
+    _login()
+    assert client.post("/api/notes/folder?scope=me", json={"path": "proj"}).status_code == 200
+    client.put("/api/notes/save?scope=me", json={"path": "proj/idea", "content": "# idea"})
+    tree = client.get("/api/notes/tree?scope=me").json()
+    assert "proj" in tree["folders"]
+    assert any(n["path"] == "proj/idea.md" for n in tree["notes"])
+    # 폴더 그래프 모드: 루트에서 하위 폴더 노드로 proj 표시
+    g = client.get("/api/notes/graph?scope=me&mode=folders").json()
+    assert any(n.get("type") == "folder" and n["title"] == "proj" for n in g["nodes"])
+
+
+def test_trash_restore_flow():
+    c = TestClient(app)
+    c.post("/api/auth/login", json={"username": "tester2", "password": "pw456"})
+    c.post(
+        "/api/files/upload?scope=me&path=",
+        files={"file": ("t.txt", io.BytesIO(b"data"), "text/plain")},
+    )
+    assert c.delete("/api/files/delete?scope=me&path=t.txt").status_code == 200
+    names = [e["name"] for e in c.get("/api/files/list?scope=me").json()["entries"]]
+    assert "t.txt" not in names  # 목록에서 사라짐
+    items = c.get("/api/trash/list").json()
+    entry = next(e for e in items if e["name"] == "t.txt")
+    assert c.post(f"/api/trash/restore?id={entry['id']}").status_code == 200
+    names2 = [e["name"] for e in c.get("/api/files/list?scope=me").json()["entries"]]
+    assert "t.txt" in names2  # 복원됨
+
+
+def test_sync_manifest_upload_download():
+    c = TestClient(app)
+    c.post("/api/auth/login", json={"username": "tester", "password": "pw123"})
+    r = c.post("/api/sync/upload?scope=me&path=synced&rel=a/b.txt", content=b"hello-sync")
+    assert r.status_code == 200, r.text
+    h = r.json()["hash"]
+    man = c.get("/api/sync/manifest?scope=me&path=synced").json()
+    assert any(f["rel"] == "a/b.txt" and f["hash"] == h for f in man["files"])
+    d = c.get("/api/sync/download?scope=me&path=synced&rel=a/b.txt")
+    assert d.status_code == 200 and d.content == b"hello-sync"
+    # 덮어쓰기 → 기존본이 휴지통으로 보존
+    c.post("/api/sync/upload?scope=me&path=synced&rel=a/b.txt", content=b"v2")
+    assert any(e["name"] == "b.txt" for e in c.get("/api/trash/list").json())
+
+
+def test_terminal_status_gate():
+    _login()
+    st = client.get("/api/terminal/status").json()
+    # 테스트 환경엔 ENABLE_TERMINAL 미설정 → 비활성
+    assert st["enabled"] is False
+    assert "available" in st
+
+
 def test_settings_get_patch():
     _login()
     s = client.get("/api/settings").json()
@@ -303,6 +355,10 @@ if __name__ == "__main__":
     test_path_traversal_blocked()
     test_upload_illegal_filename_sanitized()
     test_notes_wikilinks_and_graph()
+    test_notes_folders_and_tree()
+    test_trash_restore_flow()
+    test_sync_manifest_upload_download()
+    test_terminal_status_gate()
     test_settings_get_patch()
     test_calendar_recurrence_and_reminders()
     test_calendar_lifecycle()

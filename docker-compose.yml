@@ -28,6 +28,24 @@ services:
     ports:
       - "80:80"
 
+  # 웹 터미널 (admin 전용, 옵트인). 켜려면:
+  #   .env에 ENABLE_TERMINAL=true, 그리고
+  #   docker compose --profile terminal up -d --build
+  # ⚠️ pid:host + privileged + nsenter로 호스트(라즈베리파이) 루트 셸에 접근한다.
+  #    외부 노출 시 admin 비밀번호를 반드시 강하게 설정할 것.
+  terminal:
+    build: ./terminal
+    container_name: server-terminal
+    restart: unless-stopped
+    profiles: ["terminal"]
+    pid: "host"
+    privileged: true
+    environment:
+      # 백엔드와 동일한 세션 비밀/솔트로 admin 토큰 검증 (최소 권한: 이 3개만 주입)
+      SESSION_SECRET: ${SESSION_SECRET}
+      SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-3600}
+      TERMINAL_ADMINS: ${TERMINAL_ADMINS:-admin}
+
   # 4단계: 포트포워딩 없이 외부 접속 (Cloudflare Tunnel)
   # 사용하려면: 대시보드에서 터널 생성 후 토큰을 .env의 CF_TUNNEL_TOKEN에 넣고
   #   docker compose --profile tunnel up -d

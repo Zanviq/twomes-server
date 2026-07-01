@@ -29,21 +29,45 @@ def _iter_notes(notes_dir: Path) -> list[Path]:
     return sorted(p for p in notes_dir.rglob("*.md") if p.is_file())
 
 
-def build_graph(notes_dir: Path) -> dict:
-    """노트 디렉토리 전체의 그래프 {nodes, links} 생성.
+def _resolve_base(notes_dir: Path, folder: str | None) -> Path:
+    """folder(상대경로)로 하위 트리 루트 결정. 벗어나거나 없으면 notes_dir."""
+    if not folder:
+        return notes_dir
+    base = (notes_dir / folder).resolve()
+    if base.is_dir() and (base == notes_dir or notes_dir in base.parents):
+        return base
+    return notes_dir
 
-    nodes: [{id: stem, title: stem, path: rel.md}]
-    links: [{source: stem, target: stem}]  (대상 노트가 존재할 때만)
+
+def build_graph(
+    notes_dir: Path, folder: str | None = None, mode: str = "links"
+) -> dict:
+    """노트 그래프 {nodes, links} 생성.
+
+    - mode="links": folder 하위 노트들의 위키링크 그래프.
+        nodes: [{id: stem, title, path, type:"note"}]
+    - mode="folders": folder의 직속 하위 폴더를 노드로 (드릴다운).
+        nodes: 폴더 [{id: rel, title, path, type:"folder", count}]
+             + folder 직속 노트 [{id: stem, ..., type:"note"}]
+        links: 그룹(폴더/노트) 간 위키링크 집계.
     """
-    notes = _iter_notes(notes_dir)
-    # stem(소문자) → 실제 stem 매핑 (대소문자 무시 매칭)
+    base = _resolve_base(notes_dir, folder)
+    if mode == "folders":
+        return _folder_graph(notes_dir, base)
+
+    notes = sorted(p for p in base.rglob("*.md") if p.is_file())
     by_key: dict[str, str] = {}
     nodes = []
     for p in notes:
         stem = p.stem
         by_key.setdefault(stem.lower(), stem)
         nodes.append(
-            {"id": stem, "title": stem, "path": p.relative_to(notes_dir).as_posix()}
+            {
+                "id": stem,
+                "title": stem,
+                "path": p.relative_to(notes_dir).as_posix(),
+                "type": "note",
+            }
         )
 
     links = []
@@ -61,6 +85,68 @@ def build_graph(notes_dir: Path) -> dict:
                 if key not in seen:
                     seen.add(key)
                     links.append({"source": src, "target": tgt})
+    return {"nodes": nodes, "links": links}
+
+
+def _folder_graph(notes_dir: Path, base: Path) -> dict:
+    """base의 직속 하위 폴더(+직속 노트)를 노드로 하는 그래프."""
+    subdirs = sorted(d for d in base.iterdir() if d.is_dir())
+    loose_notes = sorted(p for p in base.iterdir() if p.is_file() and p.suffix == ".md")
+
+    nodes: list[dict] = []
+    for d in subdirs:
+        rel = d.relative_to(notes_dir).as_posix()
+        count = sum(1 for p in d.rglob("*.md") if p.is_file())
+        nodes.append(
+            {"id": rel, "title": d.name, "path": rel, "type": "folder", "count": count}
+        )
+    for p in loose_notes:
+        nodes.append(
+            {
+                "id": p.stem,
+                "title": p.stem,
+                "path": p.relative_to(notes_dir).as_posix(),
+                "type": "note",
+            }
+        )
+
+    # 노트 → 소속 그룹(직속 하위폴더 rel 또는 직속 노트 stem) 매핑
+    def group_of(note: Path) -> str | None:
+        try:
+            rel_parts = note.relative_to(base).parts
+        except ValueError:
+            return None
+        if len(rel_parts) == 1:  # base 직속 노트
+            return note.stem
+        return (base / rel_parts[0]).relative_to(notes_dir).as_posix()
+
+    # 전체 스템 → 경로 (base 하위만) 로 위키링크 대상 해석
+    all_notes = [p for p in base.rglob("*.md") if p.is_file()]
+    by_key: dict[str, Path] = {}
+    for p in all_notes:
+        by_key.setdefault(p.stem.lower(), p)
+
+    valid_ids = {n["id"] for n in nodes}
+    links = []
+    seen = set()
+    for p in all_notes:
+        g_src = group_of(p)
+        if g_src not in valid_ids:
+            continue
+        try:
+            text = p.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for target in parse_wikilinks(text):
+            tp = by_key.get(target.lower())
+            if not tp:
+                continue
+            g_tgt = group_of(tp)
+            if g_tgt in valid_ids and g_tgt != g_src:
+                key = (g_src, g_tgt)
+                if key not in seen:
+                    seen.add(key)
+                    links.append({"source": g_src, "target": g_tgt})
     return {"nodes": nodes, "links": links}
 
 

@@ -89,6 +89,16 @@ class Settings:
         # 환경변수는 유저 아이디 접두사로 구분한다. 예) admin_GOOGLE_CLIENT_ID
         # 접두사 없는 값은 사용하지 않음 → 유저별 캘린더 격리.
 
+        # ── 웹 터미널 (admin 전용, 옵트인) ──
+        self.terminal_enabled: bool = os.getenv("ENABLE_TERMINAL", "false").lower() in (
+            "1", "true", "yes",
+        )
+        self.terminal_admins: list[str] = [
+            a.strip()
+            for a in os.getenv("TERMINAL_ADMINS", "admin").split(",")
+            if a.strip()
+        ]
+
         # ── 운영/보안 ──
         self.debug: bool = os.getenv("DEBUG", "false").lower() in ("1", "true", "yes")
         self.max_upload_bytes: int = int(

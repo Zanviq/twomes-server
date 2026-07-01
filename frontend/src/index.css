@@ -174,4 +174,25 @@
   .fc-server a {
     @apply no-underline;
   }
+
+  /* 더보기(+N) 팝오버: body로 포탈되어 .fc-server 밖에 렌더됨 → 전역 스타일 필요.
+     FC 기본 CSS가 --fc-page-bg-color(미정의)를 배경으로 써서 투명해지는 버그 수정. */
+  .fc-popover.fc-more-popover,
+  .fc-popover {
+    @apply overflow-hidden rounded-lg border border-line shadow-lg;
+    background: rgb(var(--surface)) !important;
+  }
+  .fc-popover .fc-popover-header {
+    @apply bg-subtle px-3 py-2 text-[12px] font-semibold text-fg;
+  }
+  .fc-popover .fc-popover-title {
+    @apply text-fg;
+  }
+  .fc-popover .fc-popover-close {
+    @apply cursor-pointer text-fg-muted opacity-70 hover:opacity-100;
+  }
+  .fc-popover .fc-popover-body {
+    @apply p-2;
+    background: rgb(var(--surface));
+  }
 }
