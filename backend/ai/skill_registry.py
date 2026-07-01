@@ -33,30 +33,10 @@ class SkillRegistry:
 
 
 def default_registry() -> SkillRegistry:
-    """기본 스킬 묶음 등록."""
-    from .skills import (
-        CreateCalendarEvent,
-        ListCalendarEvents,
-        ListFiles,
-        ListNotes,
-        ReadFile,
-        ReadNote,
-        SearchFiles,
-        ThinkSkill,
-        WriteNote,
-    )
+    """기본 스킬 묶음 등록 (도메인 모듈 집계)."""
+    from .skills import ALL_SKILLS
 
     reg = SkillRegistry()
-    for s in (
-        ThinkSkill(),
-        ListFiles(),
-        ReadFile(),
-        SearchFiles(),
-        ListNotes(),
-        ReadNote(),
-        WriteNote(),
-        ListCalendarEvents(),
-        CreateCalendarEvent(),
-    ):
+    for s in ALL_SKILLS:
         reg.register(s)
     return reg

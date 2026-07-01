@@ -212,6 +212,47 @@ def test_ai_react_chains_skills():
     assert any(ev["title"] == "미팅" for ev in calendar_store.list_events(user, s))
 
 
+def test_ai_skill_catalog_and_ops():
+    from backend.ai.skill_base import SkillContext
+    from backend.ai.skill_registry import default_registry
+    from backend.auth import SessionUser
+    from backend.config import get_settings
+
+    s = get_settings()
+    reg = default_registry()
+    catalog = reg.build_catalog()
+    # 대량 스킬 등록 확인 (20개 이상)
+    assert len(catalog) >= 20
+    names = {c["name"] for c in catalog}
+    for expected in ("delete_note", "append_note", "rename_note", "update_calendar_event",
+                     "delete_calendar_event", "find_free_slots", "get_system_status", "move_path"):
+        assert expected in names, expected
+
+    ctx = SkillContext(
+        user=SessionUser(username="tester", display_name="T", expires_at=0, remaining=0),
+        settings=s,
+    )
+    # append_note → read_note 반영
+    reg.dispatch("write_note", {"scope": "me", "title": "log", "content": "# log\n"}, ctx)
+    reg.dispatch("append_note", {"scope": "me", "title": "log", "content": "라인2"}, ctx)
+    r = reg.dispatch("read_note", {"scope": "me", "title": "log"}, ctx)
+    assert "라인2" in r.data["content"]
+    # delete_note
+    assert reg.dispatch("delete_note", {"scope": "me", "title": "log"}, ctx).ok
+    # find_free_slots (일정 없으면 근무시간 전체가 빈 시간)
+    fr = reg.dispatch("find_free_slots", {"date": "2026-09-01", "duration_minutes": 60}, ctx)
+    assert fr.ok and len(fr.data["free_slots"]) >= 1
+    # get_system_status
+    st = reg.dispatch("get_system_status", {}, ctx)
+    assert st.ok and "cpu_percent" in st.data
+    # 캘린더 update/delete 스킬
+    ev = reg.dispatch("create_calendar_event", {"title": "회의", "start": "2026-09-02T10:00:00"}, ctx)
+    eid = ev.data["event"]["id"]
+    up = reg.dispatch("update_calendar_event", {"event_id": eid, "title": "수정회의"}, ctx)
+    assert up.ok and up.data["event"]["title"] == "수정회의"
+    assert reg.dispatch("delete_calendar_event", {"event_id": eid}, ctx).ok
+
+
 def test_ai_blocks_sensitive_files():
     from backend.ai.skill_base import SkillContext
     from backend.ai.skills import ReadFile, ReadNote
@@ -266,6 +307,7 @@ if __name__ == "__main__":
     test_calendar_recurrence_and_reminders()
     test_calendar_lifecycle()
     test_ai_react_chains_skills()
+    test_ai_skill_catalog_and_ops()
     test_ai_blocks_sensitive_files()
     test_scope_isolation()
     print("ALL SMOKE TESTS PASSED")
