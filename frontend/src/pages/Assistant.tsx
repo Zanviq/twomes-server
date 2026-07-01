@@ -55,6 +55,10 @@ export function Assistant() {
     if (!text.trim() || busy) return;
     setInput("");
     setBusy(true);
+    // 직전까지의 대화(완료된 것만)를 멀티턴 컨텍스트로 전달
+    const history = messages
+      .filter((m) => m.text)
+      .map((m) => ({ role: m.role, text: m.text }));
     setMessages((m) => [
       ...m,
       { role: "user", text, steps: [] },
@@ -65,7 +69,7 @@ export function Assistant() {
       setMessages((arr) => arr.map((m, i) => (i === arr.length - 1 ? fn(m) : m)));
 
     try {
-      await aiChatStream(text, (e: AiEvent) => {
+      await aiChatStream(text, history, (e: AiEvent) => {
         if (e.type === "tool_call") {
           patchLast((m) => ({ ...m, steps: [...m.steps, { name: e.name! }] }));
         } else if (e.type === "tool_result") {

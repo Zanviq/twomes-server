@@ -141,16 +141,22 @@ export interface AiEvent {
   text?: string;
 }
 
-/** AI 채팅 SSE 스트림. 이벤트마다 onEvent 호출. */
+export interface ChatTurn {
+  role: "user" | "assistant";
+  text: string;
+}
+
+/** AI 채팅 SSE 스트림. history로 이전 대화(멀티턴) 전달. */
 export async function aiChatStream(
   message: string,
+  history: ChatTurn[],
   onEvent: (e: AiEvent) => void,
 ): Promise<void> {
   const res = await fetch(`${BASE}/api/ai/chat`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, history }),
   });
   if (!res.ok || !res.body) {
     throw new ApiError(res.status, "AI 요청 실패");
