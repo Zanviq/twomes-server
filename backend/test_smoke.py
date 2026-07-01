@@ -197,12 +197,31 @@ def test_sync_manifest_upload_download():
     assert any(e["name"] == "b.txt" for e in c.get("/api/trash/list").json())
 
 
+def test_notes_scope_in_files():
+    c = TestClient(app)
+    c.post("/api/auth/login", json={"username": "tester", "password": "pw123"})
+    # 파일 API로 notes 스코프(= 개인 노트 폴더)에 폴더 + 마크다운 생성
+    assert c.post("/api/files/mkdir?scope=notes", json={"path": "synced"}).status_code == 200
+    r = c.post(
+        "/api/files/upload?scope=notes&path=synced",
+        files={"file": ("hello.md", io.BytesIO(b"# hi"), "text/markdown")},
+    )
+    assert r.status_code == 200, r.text
+    # 노트 트리에도 같은 파일이 보임(파일관리 ↔ 노트 폴더 공유)
+    tree = c.get("/api/notes/tree?scope=me").json()
+    assert any(n["path"] == "synced/hello.md" for n in tree["notes"])
+    # sync manifest도 notes 스코프에서 동작
+    man = c.get("/api/sync/manifest?scope=notes&path=synced").json()
+    assert any(f["rel"] == "hello.md" for f in man["files"])
+
+
 def test_terminal_status_gate():
     _login()
     st = client.get("/api/terminal/status").json()
-    # 테스트 환경엔 ENABLE_TERMINAL 미설정 → 비활성
-    assert st["enabled"] is False
-    assert "available" in st
+    # 응답 형태 검증(값은 서버 .env에 의존하므로 형태만 확인)
+    assert isinstance(st["enabled"], bool)
+    assert isinstance(st["is_admin"], bool)
+    assert isinstance(st["available"], bool)
 
 
 def test_settings_get_patch():
@@ -358,6 +377,7 @@ if __name__ == "__main__":
     test_notes_folders_and_tree()
     test_trash_restore_flow()
     test_sync_manifest_upload_download()
+    test_notes_scope_in_files()
     test_terminal_status_gate()
     test_settings_get_patch()
     test_calendar_recurrence_and_reminders()

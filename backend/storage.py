@@ -17,15 +17,21 @@ from .auth import SessionUser
 from .config import Settings
 from .security_paths import safe_join
 
-VALID_SCOPES = ("common", "me")
+VALID_SCOPES = ("common", "me", "notes")
 
 
 def scope_root(scope: str, user: SessionUser, settings: Settings) -> Path:
-    """스코프의 실제 디스크 루트 반환(없으면 생성)."""
+    """스코프의 실제 디스크 루트 반환(없으면 생성).
+
+    notes 스코프는 개인 노트 폴더를 가리켜, 파일 관리·연동에서 노트를 다룰 수 있게 한다.
+    (notes_root('me')와 동일한 경로 → 파일관리/노트페이지가 같은 폴더를 공유)
+    """
     if scope == "common":
         root = settings.common_root
     elif scope == "me":
         root = settings.user_root(user.username) / "files"
+    elif scope == "notes":
+        root = settings.user_root(user.username) / "notes"
     else:
         raise HTTPException(status_code=400, detail="잘못된 스코프입니다.")
     root.mkdir(parents=True, exist_ok=True)

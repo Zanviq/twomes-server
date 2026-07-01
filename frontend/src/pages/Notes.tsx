@@ -246,14 +246,57 @@ export function Notes() {
     [notes, openNote, save, reloadTree],
   );
 
+  // 파일관리(notes 스코프)에서 정확한 경로로 노트 열기 — 개인 노트(me) 기준
+  const openExactPath = useCallback(async (path: string) => {
+    setScope("me");
+    try {
+      const d = await api.noteGet("me", path);
+      setCurrent(d.path);
+      setContent(d.content);
+      setDetail(d);
+      setDirty(false);
+      const slash = d.path.lastIndexOf("/");
+      setCurFolder(slash >= 0 ? d.path.slice(0, slash) : "");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "노트 열기 실패");
+    }
+  }, []);
+
+  // 파일관리(me/common 스코프)의 문서를 읽기전용 미리보기로 열기
+  const [filePreview, setFilePreview] = useState<{ name: string; content: string } | null>(null);
+  const openFilePreview = useCallback(async (spec: string) => {
+    const idx = spec.indexOf(":");
+    if (idx < 0) return;
+    const sc = spec.slice(0, idx) as Scope;
+    const p = spec.slice(idx + 1);
+    try {
+      const res = await fetch(api.downloadUrl(sc, p), { credentials: "include" });
+      if (!res.ok) throw new Error("불러오기 실패");
+      const t = await res.text();
+      setFilePreview({ name: p.split("/").pop() || p, content: t.slice(0, 100000) });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "파일을 불러오지 못했습니다");
+    }
+  }, []);
+
   useEffect(() => {
     const open = params.get("open");
-    if (open && notes.length) {
+    const path = params.get("path");
+    const file = params.get("file");
+    if (path) {
+      openExactPath(path);
+      params.delete("path");
+      setParams(params, { replace: true });
+    } else if (file) {
+      openFilePreview(file);
+      params.delete("file");
+      setParams(params, { replace: true });
+    } else if (open && notes.length) {
       openByTitle(open);
       params.delete("open");
       setParams(params, { replace: true });
     }
-  }, [params, notes, openByTitle, setParams]);
+  }, [params, notes, openByTitle, openExactPath, openFilePreview, setParams]);
 
   const toggleFolder = (path: string) => {
     setCurFolder(path);
@@ -484,6 +527,16 @@ export function Notes() {
             <button onClick={() => setDelOpen(false)} className="btn btn-ghost">취소</button>
             <button onClick={delNote} className="btn btn-danger"><Trash2 size={14} /> 휴지통으로</button>
           </div>
+        </div>
+      </Modal>
+
+      {/* 파일 문서 읽기전용 미리보기 (파일관리에서 진입) */}
+      <Modal open={!!filePreview} onClose={() => setFilePreview(null)} title={`미리보기 · ${filePreview?.name ?? ""}`} width="max-w-3xl">
+        <div className="max-h-[65vh] overflow-auto">
+          {filePreview && (/\.md$/i.test(filePreview.name)
+            ? <MarkdownView content={filePreview.content} onWikiClick={() => {}} />
+            : <pre className="whitespace-pre-wrap break-words font-mono text-[12.5px] leading-relaxed text-fg2">{filePreview.content || "(빈 파일)"}</pre>
+          )}
         </div>
       </Modal>
 

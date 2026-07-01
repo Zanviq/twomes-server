@@ -2,7 +2,7 @@
 
 const BASE = import.meta.env.VITE_API_BASE ?? "";
 
-export type Scope = "common" | "me";
+export type Scope = "common" | "me" | "notes";
 
 export interface SessionInfo {
   username: string;

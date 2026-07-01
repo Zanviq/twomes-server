@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Folder, FileText, FileCode, FileImage, FileArchive, File as FileIcon,
   ChevronRight, Upload, FolderPlus, Download, Trash2, Pencil, Home,
-  Loader2, RefreshCw,
+  Loader2, RefreshCw, NotebookPen,
 } from "lucide-react";
 import { api, FileEntry, Scope } from "../../lib/api";
 import { formatBytes, formatTime, fileKind } from "../../lib/format";
 import { Modal } from "../ui/Modal";
 import { FileViewer } from "./FileViewer";
 import { useSettings } from "../../store/settings";
+
+const isMarkdown = (name: string) => /\.md$/i.test(name);
+const isDoc = (name: string) => /\.(md|txt|markdown|text)$/i.test(name);
 
 const KIND_ICON: Record<string, typeof FileIcon> = {
   doc: FileText, code: FileCode, img: FileImage, arc: FileArchive, file: FileIcon,
@@ -57,6 +61,18 @@ export function FileExplorer({
   useEffect(() => {
     load(initialPath);
   }, [load, initialPath]);
+
+  const navigate = useNavigate();
+
+  /** 문서(.md/.txt) 더블클릭 → 노트 페이지에서 보기.
+   *  notes 스코프의 .md 는 편집 가능한 노트로, 그 외 문서는 읽기 전용 미리보기로. */
+  const openInNotes = (e: FileEntry) => {
+    if (scope === "notes" && isMarkdown(e.name)) {
+      navigate(`/notes?path=${encodeURIComponent(e.path)}`);
+    } else {
+      navigate(`/notes?file=${encodeURIComponent(scope + ":" + e.path)}`);
+    }
+  };
 
   const open = (e: FileEntry) => (e.is_dir ? load(e.path) : setViewing(e));
 
@@ -209,6 +225,8 @@ export function FileExplorer({
               return (
                 <li key={e.path} className="group flex items-center gap-2 px-4 py-2.5 hover:bg-hovered sm:gap-3 sm:px-5">
                   <button onClick={() => open(e)}
+                    onDoubleClick={() => !e.is_dir && isDoc(e.name) && openInNotes(e)}
+                    title={!e.is_dir && isDoc(e.name) ? "더블클릭: 노트 페이지에서 보기" : undefined}
                     className="flex min-w-0 flex-1 items-center gap-3 text-left">
                     <Icon size={17} className={`shrink-0 ${e.is_dir ? "text-accent" : "text-fg-muted"}`} />
                     <span className="truncate text-[13.5px]">{e.name}</span>
@@ -220,6 +238,12 @@ export function FileExplorer({
                     {formatTime(e.modified)}
                   </span>
                   <div className="flex shrink-0 items-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
+                    {!e.is_dir && isDoc(e.name) && (
+                      <button onClick={() => openInNotes(e)}
+                        className="grid h-8 w-8 place-items-center rounded-md text-fg-muted hover:bg-subtle hover:text-accent" title="노트 페이지에서 보기">
+                        <NotebookPen size={15} />
+                      </button>
+                    )}
                     {!e.is_dir && (
                       <a href={api.downloadUrl(scope, e.path)} download
                         className="grid h-8 w-8 place-items-center rounded-md text-fg-muted hover:bg-subtle hover:text-accent" title="다운로드">
