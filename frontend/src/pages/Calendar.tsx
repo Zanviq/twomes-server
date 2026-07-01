@@ -5,12 +5,20 @@ import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import type { DateClickArg } from "@fullcalendar/interaction";
 import type { DatesSetArg, EventClickArg } from "@fullcalendar/core";
-import { Loader2 } from "lucide-react";
+import { Loader2, Bot } from "lucide-react";
 import { Shell } from "../components/layout/Shell";
 import { EventDialog, GCAL_COLORS } from "../components/calendar/EventDialog";
+import { ChatPanel } from "../components/ai/ChatPanel";
 import { api, CalEvent } from "../lib/api";
 import { toast } from "../store/toast";
 import { useSettings } from "../store/settings";
+
+const CAL_SUGGESTIONS = [
+  "이번 주 일정 정리해줘",
+  "내일 오후 3시에 운동 일정 잡아줘",
+  "다음 주 회의 가능한 빈 시간 찾아줘",
+  "이번 달 일정 몇 개야?",
+];
 
 /** Date를 로컬 naive ISO("YYYY-MM-DDTHH:mm:ss")로. 저장 이벤트와 동일 규약. */
 function localISO(d: Date): string {
@@ -113,26 +121,38 @@ export function Calendar() {
         </div>
       }
     >
-      <div className="card fc-twomes p-4">
-        <FullCalendar
-          plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-          initialView={defaultView}
-          firstDay={weekStart}
-          locale="ko"
-          headerToolbar={{
-            left: "prev,next today",
-            center: "title",
-            right: "dayGridMonth,timeGridWeek,timeGridDay",
-          }}
-          buttonText={{ today: "오늘", month: "월", week: "주", day: "일" }}
-          events={fcEvents}
-          datesSet={onDatesSet}
-          dateClick={onDateClick}
-          eventClick={onEventClick}
-          dayMaxEvents={3}
-          height="auto"
-          nowIndicator
-        />
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+        <div className="card fc-twomes min-w-0 flex-1 p-4">
+          <FullCalendar
+            plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+            initialView={defaultView}
+            firstDay={weekStart}
+            locale="ko"
+            headerToolbar={{
+              left: "prev,next today",
+              center: "title",
+              right: "dayGridMonth,timeGridWeek,timeGridDay",
+            }}
+            buttonText={{ today: "오늘", month: "월", week: "주", day: "일" }}
+            events={fcEvents}
+            datesSet={onDatesSet}
+            dateClick={onDateClick}
+            eventClick={onEventClick}
+            dayMaxEvents={3}
+            height="auto"
+            nowIndicator
+          />
+        </div>
+        <div className="card flex h-[70vh] w-full flex-col p-4 lg:h-[calc(100vh-9rem)] lg:w-[380px] lg:shrink-0">
+          <div className="mb-2 flex items-center gap-2 border-b border-line/50 pb-2 text-sm font-semibold">
+            <Bot size={16} className="text-accent" /> AI 일정 비서
+          </div>
+          <ChatPanel
+            className="flex-1"
+            suggestions={CAL_SUGGESTIONS}
+            onToolSuccess={reload}
+          />
+        </div>
       </div>
       <EventDialog
         open={!!dialog}
