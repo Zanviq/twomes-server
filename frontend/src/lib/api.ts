@@ -106,6 +106,8 @@ export const api = {
     req(`/api/notes/delete?${q({ scope, path })}`, { method: "DELETE" }),
   noteGraph: (scope: Scope) =>
     req<NotesGraph>(`/api/notes/graph?${q({ scope })}`),
+  noteSearch: (scope: Scope, query: string) =>
+    req<NoteSearchHit[]>(`/api/notes/search?${q({ scope, q: query })}`),
 
   // ── calendar ──
   calSource: () => req<{ source: string }>("/api/calendar/source"),
@@ -223,4 +225,9 @@ export interface NoteDetail {
 export interface NotesGraph {
   nodes: { id: string; title: string; path: string }[];
   links: { source: string; target: string }[];
+}
+export interface NoteSearchHit {
+  path: string;
+  title: string;
+  snippet: string;
 }

@@ -117,6 +117,10 @@ def test_notes_wikilinks_and_graph():
     assert len(g["nodes"]) == 3
     pairs = {(l["source"], l["target"]) for l in g["links"]}
     assert ("A", "B") in pairs and ("A", "C") in pairs and ("B", "A") in pairs
+    # 전문 검색: 내용("alias")으로 매칭
+    hits = client.get("/api/notes/search?scope=me&q=alias").json()
+    assert any(h["title"] == "A" for h in hits)
+    assert all("snippet" in h for h in hits)
 
 
 def test_calendar_recurrence_and_reminders():

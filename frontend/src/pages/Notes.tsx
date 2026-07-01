@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  NotebookPen, Plus, Trash2, Save, Link2, Users, User, Loader2, FileText,
+  NotebookPen, Plus, Trash2, Save, Link2, Users, User, Loader2, FileText, Search, X,
 } from "lucide-react";
 import { Shell } from "../components/layout/Shell";
 import { MarkdownView } from "../components/notes/MarkdownView";
 import { Modal } from "../components/ui/Modal";
-import { api, NoteSummary, NoteDetail, Scope } from "../lib/api";
+import { api, NoteSummary, NoteDetail, NoteSearchHit, Scope } from "../lib/api";
 import { toast } from "../store/toast";
 import { useSettings } from "../store/settings";
 
@@ -25,6 +25,9 @@ export function Notes() {
   const saveTimer = useRef<number | null>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const [suggest, setSuggest] = useState<string[] | null>(null);
+  const [query, setQuery] = useState("");
+  const [hits, setHits] = useState<NoteSearchHit[] | null>(null);
+  const searchTimer = useRef<number | null>(null);
   const [params, setParams] = useSearchParams();
 
   const autosaveMs = prefs?.autosave_ms ?? 900;
@@ -131,6 +134,22 @@ export function Notes() {
     }
   };
 
+  const onSearch = (v: string) => {
+    setQuery(v);
+    if (searchTimer.current) window.clearTimeout(searchTimer.current);
+    if (!v.trim()) {
+      setHits(null);
+      return;
+    }
+    searchTimer.current = window.setTimeout(async () => {
+      try {
+        setHits(await api.noteSearch(scope, v.trim()));
+      } catch {
+        setHits([]);
+      }
+    }, 300);
+  };
+
   const openByTitle = useCallback(
     (title: string) => {
       const found = list.find((n) => n.title.toLowerCase() === title.toLowerCase());
@@ -167,25 +186,60 @@ export function Notes() {
     <Shell title="노트" actions={crumbs}>
       <div className="grid grid-cols-1 gap-4 lg:h-[calc(100vh-9rem)] lg:grid-cols-[220px_1fr_1fr]">
         {/* 목록 */}
-        <div className="card flex max-h-56 flex-col overflow-hidden lg:max-h-none">
+        <div className="card flex max-h-72 flex-col overflow-hidden lg:max-h-none">
           <div className="flex items-center justify-between border-b border-line px-3 py-2">
             <span className="label">노트 {list.length}</span>
             <button onClick={() => setNewOpen(true)} className="btn btn-ghost h-7 px-2" title="새 노트" aria-label="새 노트">
               <Plus size={15} />
             </button>
           </div>
-          <ul className="flex-1 overflow-auto p-1">
-            {list.map((n) => (
-              <li key={n.path}>
-                <button onClick={() => openNote(n.path)}
-                  className={`flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[13px] ${current === n.path ? "bg-accent-muted text-accent-fg" : "hover:bg-hovered"}`}>
-                  <FileText size={14} className="shrink-0 text-fg-muted" />
-                  <span className="truncate">{n.title}</span>
+          <div className="border-b border-line p-2">
+            <div className="relative">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-subtle" />
+              <input value={query} onChange={(e) => onSearch(e.target.value)}
+                placeholder="내용 검색…" aria-label="노트 검색"
+                className="input h-8 pl-8 pr-7 text-[12.5px]" />
+              {query && (
+                <button onClick={() => onSearch("")} aria-label="검색 지우기"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-fg-muted hover:text-fg">
+                  <X size={13} />
                 </button>
-              </li>
-            ))}
-            {list.length === 0 && (
-              <li className="px-2 py-6 text-center text-[12px] text-fg-muted">노트가 없습니다</li>
+              )}
+            </div>
+          </div>
+          <ul className="flex-1 overflow-auto p-1">
+            {hits !== null ? (
+              hits.length === 0 ? (
+                <li className="px-2 py-6 text-center text-[12px] text-fg-muted">검색 결과 없음</li>
+              ) : (
+                hits.map((h) => (
+                  <li key={h.path}>
+                    <button onClick={() => openNote(h.path)}
+                      className={`flex w-full flex-col gap-0.5 rounded-md px-2.5 py-2 text-left ${current === h.path ? "bg-accent-muted" : "hover:bg-hovered"}`}>
+                      <span className="flex items-center gap-2 text-[13px] font-medium">
+                        <FileText size={13} className="shrink-0 text-accent" />
+                        <span className="truncate">{h.title}</span>
+                      </span>
+                      <span className="truncate pl-5 text-[11.5px] text-fg-muted">{h.snippet}</span>
+                    </button>
+                  </li>
+                ))
+              )
+            ) : (
+              <>
+                {list.map((n) => (
+                  <li key={n.path}>
+                    <button onClick={() => openNote(n.path)}
+                      className={`flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[13px] ${current === n.path ? "bg-accent-muted text-accent-fg" : "hover:bg-hovered"}`}>
+                      <FileText size={14} className="shrink-0 text-fg-muted" />
+                      <span className="truncate">{n.title}</span>
+                    </button>
+                  </li>
+                ))}
+                {list.length === 0 && (
+                  <li className="px-2 py-6 text-center text-[12px] text-fg-muted">노트가 없습니다</li>
+                )}
+              </>
             )}
           </ul>
         </div>

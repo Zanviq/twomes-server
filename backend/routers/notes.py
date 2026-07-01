@@ -39,6 +39,22 @@ class GraphData(BaseModel):
     links: list[dict]
 
 
+class SearchHit(BaseModel):
+    path: str
+    title: str
+    snippet: str
+
+
+def _snippet(text: str, q: str, width: int = 60) -> str:
+    low = text.lower()
+    i = low.find(q.lower())
+    if i < 0:
+        return text[:width].replace("\n", " ").strip()
+    start = max(0, i - width // 2)
+    seg = text[start : start + width].replace("\n", " ").strip()
+    return ("…" if start > 0 else "") + seg + ("…" if start + width < len(text) else "")
+
+
 def _ensure_md(path: str) -> str:
     return path if path.endswith(".md") else f"{path}.md"
 
@@ -111,6 +127,34 @@ def delete_note(
         raise HTTPException(status_code=404, detail="노트를 찾을 수 없습니다.")
     target.unlink()
     return {"ok": True}
+
+
+@router.get("/search", response_model=list[SearchHit])
+def search_notes(
+    scope: str = Query("me"),
+    q: str = Query(..., min_length=1),
+    user: SessionUser = Depends(require_session),
+    settings: Settings = Depends(get_settings),
+):
+    """제목·내용 전문 검색. 매치 스니펫 포함."""
+    root = notes_root(scope, user, settings)
+    ql = q.lower()
+    hits: list[SearchHit] = []
+    for p in sorted(root.rglob("*.md")):
+        if not p.is_file():
+            continue
+        title = p.stem
+        try:
+            text = p.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if ql in title.lower() or ql in text.lower():
+            hits.append(
+                SearchHit(path=to_rel(root, p), title=title, snippet=_snippet(text, q))
+            )
+        if len(hits) >= 50:
+            break
+    return hits
 
 
 @router.get("/graph", response_model=GraphData)
