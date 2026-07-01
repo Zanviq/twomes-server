@@ -46,6 +46,14 @@ def _verify(token: str) -> str | None:
     return u if u in ADMINS else None
 
 
+def _headers(ws):
+    """websockets 버전 호환: v13+ 는 ws.request.headers, 레거시(v12)는 ws.request_headers."""
+    req = getattr(ws, "request", None)
+    if req is not None and getattr(req, "headers", None) is not None:
+        return req.headers
+    return ws.request_headers
+
+
 def _origin_ok(headers) -> bool:
     """Cross-Site WebSocket Hijacking 방지: 핸드셰이크 Origin 검증.
 
@@ -78,10 +86,11 @@ def _cookie_token(header: str) -> str:
 
 async def handler(ws):
     # ── Origin 검증 (CSWSH 방지) → 인증 ──
-    if not _origin_ok(ws.request.headers):
+    headers = _headers(ws)
+    if not _origin_ok(headers):
         await ws.close(code=4403, reason="bad origin")
         return
-    cookie_header = ws.request.headers.get("Cookie", "")
+    cookie_header = headers.get("Cookie", "")
     user = _verify(_cookie_token(cookie_header))
     if not user:
         await ws.close(code=4403, reason="forbidden")

@@ -11,15 +11,36 @@ import { Toaster } from "./components/ui/Toaster";
 import { ReminderPoller } from "./components/ReminderPoller";
 
 // 무거운 라우트는 코드 분할(지연 로드) — 초기 번들 축소
-const Notes = lazy(() => import("./pages/Notes").then((m) => ({ default: m.Notes })));
-const Graph = lazy(() => import("./pages/Graph").then((m) => ({ default: m.Graph })));
-const Calendar = lazy(() => import("./pages/Calendar").then((m) => ({ default: m.Calendar })));
-const Assistant = lazy(() => import("./pages/Assistant").then((m) => ({ default: m.Assistant })));
-const Settings = lazy(() => import("./pages/Settings").then((m) => ({ default: m.Settings })));
-const Profile = lazy(() => import("./pages/Profile").then((m) => ({ default: m.Profile })));
-const Trash = lazy(() => import("./pages/Trash").then((m) => ({ default: m.Trash })));
-const Sync = lazy(() => import("./pages/Sync").then((m) => ({ default: m.Sync })));
-const TerminalPage = lazy(() => import("./pages/Terminal").then((m) => ({ default: m.TerminalPage })));
+// 라우트별 동적 import 썽크 — lazy()와 프리페치에 함께 사용
+const loaders = {
+  notes: () => import("./pages/Notes"),
+  graph: () => import("./pages/Graph"),
+  calendar: () => import("./pages/Calendar"),
+  assistant: () => import("./pages/Assistant"),
+  settings: () => import("./pages/Settings"),
+  profile: () => import("./pages/Profile"),
+  trash: () => import("./pages/Trash"),
+  sync: () => import("./pages/Sync"),
+  terminal: () => import("./pages/Terminal"),
+};
+
+const Notes = lazy(() => loaders.notes().then((m) => ({ default: m.Notes })));
+const Graph = lazy(() => loaders.graph().then((m) => ({ default: m.Graph })));
+const Calendar = lazy(() => loaders.calendar().then((m) => ({ default: m.Calendar })));
+const Assistant = lazy(() => loaders.assistant().then((m) => ({ default: m.Assistant })));
+const Settings = lazy(() => loaders.settings().then((m) => ({ default: m.Settings })));
+const Profile = lazy(() => loaders.profile().then((m) => ({ default: m.Profile })));
+const Trash = lazy(() => loaders.trash().then((m) => ({ default: m.Trash })));
+const Sync = lazy(() => loaders.sync().then((m) => ({ default: m.Sync })));
+const TerminalPage = lazy(() => loaders.terminal().then((m) => ({ default: m.TerminalPage })));
+
+/** 로그인 후 유휴 시간에 모든 라우트 청크를 미리 로드 → 페이지 이동 지연 제거 */
+function prefetchRoutes() {
+  const run = () => Object.values(loaders).forEach((l) => l().catch(() => {}));
+  const ric = (window as unknown as { requestIdleCallback?: (cb: () => void) => void }).requestIdleCallback;
+  if (ric) ric(run);
+  else setTimeout(run, 1500);
+}
 
 function Spinner() {
   return (
@@ -57,11 +78,12 @@ export default function App() {
     init();
   }, [init]);
 
-  // 로그인되면 개인 설정 로드 + 로컬 연동 자동 시도
+  // 로그인되면 개인 설정 로드 + 로컬 연동 자동 시도 + 라우트 프리페치
   useEffect(() => {
     if (session) {
       useSettings.getState().load();
       useSync.getState().init(session.username);
+      prefetchRoutes();
     }
   }, [session]);
 

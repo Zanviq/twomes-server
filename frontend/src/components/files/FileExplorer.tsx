@@ -18,10 +18,12 @@ export function FileExplorer({
   scope,
   onError,
   onToast,
+  initialPath = "",
 }: {
   scope: Scope;
   onError: (m: string) => void;
   onToast: (m: string) => void;
+  initialPath?: string;
 }) {
   const [cwd, setCwd] = useState("");
   const [entries, setEntries] = useState<FileEntry[]>([]);
@@ -53,8 +55,8 @@ export function FileExplorer({
   );
 
   useEffect(() => {
-    load("");
-  }, [load]);
+    load(initialPath);
+  }, [load, initialPath]);
 
   const open = (e: FileEntry) => (e.is_dir ? load(e.path) : setViewing(e));
 

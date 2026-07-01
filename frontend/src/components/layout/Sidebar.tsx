@@ -16,6 +16,15 @@ import {
 import { useAuth } from "../../store/auth";
 import { api } from "../../lib/api";
 
+// 터미널 가용 여부는 세션 중 바뀌지 않으므로 1회만 조회해 캐시(페이지 이동마다 재요청 방지)
+let _termAvailCache: Promise<boolean> | null = null;
+const terminalAvailable = (): Promise<boolean> => {
+  if (!_termAvailCache) {
+    _termAvailCache = api.terminalStatus().then((s) => s.available).catch(() => false);
+  }
+  return _termAvailCache;
+};
+
 const NAV = [
   { to: "/", icon: LayoutDashboard, label: "대시보드", end: true },
   { to: "/files", icon: FolderOpen, label: "파일" },
@@ -67,7 +76,7 @@ export function Sidebar() {
   const [termAvail, setTermAvail] = useState(false);
 
   useEffect(() => {
-    api.terminalStatus().then((s) => setTermAvail(s.available)).catch(() => setTermAvail(false));
+    terminalAvailable().then(setTermAvail);
   }, []);
 
   const nav = termAvail
@@ -99,8 +108,8 @@ export function Sidebar() {
         </div>
       </aside>
 
-      {/* 모바일 하단 탭바 (라벨 표시) */}
-      <nav className="fixed inset-x-0 bottom-0 z-40 flex items-stretch justify-around border-t border-line bg-sidebar px-1 py-1 sm:hidden">
+      {/* 모바일 하단 탭바 — 항목이 많아 가로 스크롤(줄바꿈 방지) */}
+      <nav className="fixed inset-x-0 bottom-0 z-40 flex items-stretch gap-0.5 overflow-x-auto border-t border-line bg-sidebar px-2 py-1 [scrollbar-width:none] sm:hidden [&::-webkit-scrollbar]:hidden">
         {[...nav, { to: "/settings", icon: Settings, label: "설정" }, { to: "/profile", icon: User, label: "프로필" }].map(
           (n) => (
             <NavLink
@@ -109,13 +118,13 @@ export function Sidebar() {
               end={(n as { end?: boolean }).end}
               aria-label={n.label}
               className={({ isActive }) =>
-                `flex flex-1 flex-col items-center gap-0.5 rounded-md py-1.5 text-[10px] transition-colors ${
+                `flex w-[58px] shrink-0 flex-col items-center gap-0.5 rounded-md py-1.5 text-[10px] transition-colors ${
                   isActive ? "text-sidebar-fg-active" : "text-sidebar-fg"
                 }`
               }
             >
               <n.icon size={18} />
-              <span className="truncate">{n.label}</span>
+              <span className="w-full truncate text-center">{n.label}</span>
             </NavLink>
           ),
         )}

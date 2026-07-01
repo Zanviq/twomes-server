@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Users, User } from "lucide-react";
 import { Shell } from "../components/layout/Shell";
 import { FileExplorer } from "../components/files/FileExplorer";
@@ -8,7 +9,12 @@ import { useSettings } from "../store/settings";
 
 export function Files() {
   const defaultScope = useSettings((s) => s.settings?.files.default_scope);
-  const [scope, setScope] = useState<Scope>((defaultScope as Scope) || "common");
+  const [params] = useSearchParams();
+  const urlScope = params.get("scope");
+  const initialPath = params.get("path") ?? "";
+  const [scope, setScope] = useState<Scope>(
+    (urlScope as Scope) || (defaultScope as Scope) || "common",
+  );
   return (
     <Shell
       title="파일"
@@ -33,7 +39,13 @@ export function Files() {
         </div>
       }
     >
-      <FileExplorer key={scope} scope={scope} onError={toast.error} onToast={toast.ok} />
+      <FileExplorer
+        key={scope}
+        scope={scope}
+        initialPath={scope === urlScope ? initialPath : ""}
+        onError={toast.error}
+        onToast={toast.ok}
+      />
     </Shell>
   );
 }

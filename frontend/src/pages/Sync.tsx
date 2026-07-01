@@ -1,13 +1,17 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import {
   FolderSync, Loader2, RefreshCw, Link as LinkIcon, Unlink, AlertTriangle,
-  CheckCircle2, MonitorSmartphone, ArrowUp, ArrowDown, GitMerge,
+  CheckCircle2, MonitorSmartphone, ArrowUp, ArrowDown, GitMerge, FolderOpen,
 } from "lucide-react";
 import { Shell } from "../components/layout/Shell";
 import { Modal } from "../components/ui/Modal";
 import { useSync } from "../store/sync";
 import { Scope } from "../lib/api";
 import { toast } from "../store/toast";
+
+const webLabel = (scope: Scope, path: string) =>
+  `${scope === "me" ? "내 파일" : "공통"} / ${path || "(루트)"}`;
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; cls: string; icon: JSX.Element }> = {
@@ -74,6 +78,9 @@ export function Sync() {
                 </p>
               </div>
               <div className="flex items-center gap-2">
+                <Link to={`/files?scope=${st.scope}&path=${encodeURIComponent(st.path)}`} className="btn btn-ghost h-8">
+                  <FolderOpen size={14} /> 파일에서 열기
+                </Link>
                 <button onClick={() => st.runSync()} disabled={st.status === "syncing"} className="btn btn-secondary h-8">
                   {st.status === "syncing" ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
                   지금 동기화
@@ -84,9 +91,10 @@ export function Sync() {
               </div>
             </div>
             {st.stats && (
-              <p className="mt-3 flex items-center gap-3 text-[12px] text-fg-muted">
+              <p className="mt-3 flex flex-wrap items-center gap-3 text-[12px] text-fg-muted">
                 <span className="inline-flex items-center gap-1"><ArrowUp size={12} className="text-positive" /> 업로드 {st.stats.up}</span>
                 <span className="inline-flex items-center gap-1"><ArrowDown size={12} className="text-accent" /> 다운로드 {st.stats.down}</span>
+                <span>· <b className="text-accent">{webLabel(st.scope, st.path)}</b> 에 저장됨</span>
               </p>
             )}
           </div>
@@ -124,6 +132,11 @@ export function Sync() {
                 <FolderSync size={15} /> 폴더 선택 & 연동
               </button>
             </div>
+            <p className="rounded-md bg-subtle px-3 py-2 text-[12.5px] text-fg2">
+              → 선택한 로컬 폴더가 <b className="text-accent">{webLabel(scope, path.trim())}</b> 위치에 동기화됩니다.
+              <br />
+              <span className="text-fg-muted">연동 후 <b>파일 → {scope === "me" ? "내 폴더" : "공통"}</b>에서 확인할 수 있습니다.</span>
+            </p>
             {st.status === "error" && st.error && (
               <p className="text-[12.5px] text-danger">{st.error}</p>
             )}
