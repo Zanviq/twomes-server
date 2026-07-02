@@ -3,6 +3,7 @@
 const BASE = import.meta.env.VITE_API_BASE ?? "";
 
 export type Scope = "common" | "me" | "notes";
+export type NoteBase = "notes" | "files";
 
 export interface SessionInfo {
   username: string;
@@ -95,25 +96,25 @@ export const api = {
   downloadUrl: (scope: Scope, path: string) =>
     `${BASE}/api/files/download?${q({ scope, path })}`,
 
-  // ── notes ──
-  noteList: (scope: Scope) =>
-    req<NoteSummary[]>(`/api/notes/list?${q({ scope })}`),
-  noteGet: (scope: Scope, path: string) =>
-    req<NoteDetail>(`/api/notes/get?${q({ scope, path })}`),
-  noteSave: (scope: Scope, path: string, content: string) =>
-    req<NoteSummary>(`/api/notes/save?${q({ scope })}`, jsonInit("PUT", { path, content })),
-  noteDelete: (scope: Scope, path: string) =>
-    req(`/api/notes/delete?${q({ scope, path })}`, { method: "DELETE" }),
-  noteGraph: (scope: Scope, folder = "", mode: "links" | "folders" = "links") =>
-    req<NotesGraph>(`/api/notes/graph?${q({ scope, folder, mode })}`),
-  noteSearch: (scope: Scope, query: string) =>
-    req<NoteSearchHit[]>(`/api/notes/search?${q({ scope, q: query })}`),
-  noteTree: (scope: Scope) =>
-    req<NotesTree>(`/api/notes/tree?${q({ scope })}`),
-  noteFolderCreate: (scope: Scope, path: string) =>
-    req(`/api/notes/folder?${q({ scope })}`, jsonInit("POST", { path })),
-  noteFolderDelete: (scope: Scope, path: string) =>
-    req(`/api/notes/folder?${q({ scope, path })}`, { method: "DELETE" }),
+  // ── notes ── (base="notes": 노트 폴더 / base="files": 파일 저장소의 .md 편집)
+  noteList: (scope: Scope, base: NoteBase = "notes") =>
+    req<NoteSummary[]>(`/api/notes/list?${q({ scope, base })}`),
+  noteGet: (scope: Scope, path: string, base: NoteBase = "notes") =>
+    req<NoteDetail>(`/api/notes/get?${q({ scope, path, base })}`),
+  noteSave: (scope: Scope, path: string, content: string, base: NoteBase = "notes") =>
+    req<NoteSummary>(`/api/notes/save?${q({ scope, base })}`, jsonInit("PUT", { path, content })),
+  noteDelete: (scope: Scope, path: string, base: NoteBase = "notes") =>
+    req(`/api/notes/delete?${q({ scope, path, base })}`, { method: "DELETE" }),
+  noteGraph: (scope: Scope, folder = "", mode: "links" | "folders" = "links", base: NoteBase = "notes") =>
+    req<NotesGraph>(`/api/notes/graph?${q({ scope, folder, mode, base })}`),
+  noteSearch: (scope: Scope, query: string, base: NoteBase = "notes") =>
+    req<NoteSearchHit[]>(`/api/notes/search?${q({ scope, q: query, base })}`),
+  noteTree: (scope: Scope, base: NoteBase = "notes") =>
+    req<NotesTree>(`/api/notes/tree?${q({ scope, base })}`),
+  noteFolderCreate: (scope: Scope, path: string, base: NoteBase = "notes") =>
+    req(`/api/notes/folder?${q({ scope, base })}`, jsonInit("POST", { path })),
+  noteFolderDelete: (scope: Scope, path: string, base: NoteBase = "notes") =>
+    req(`/api/notes/folder?${q({ scope, path, base })}`, { method: "DELETE" }),
 
   // ── 휴지통 ──
   trashList: () => req<TrashEntry[]>("/api/trash/list"),

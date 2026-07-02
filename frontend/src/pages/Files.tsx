@@ -13,7 +13,7 @@ export function Files() {
   const urlScope = params.get("scope");
   const initialPath = params.get("path") ?? "";
   const [scope, setScope] = useState<Scope>(
-    (urlScope as Scope) || (defaultScope as Scope) || "common",
+    (urlScope as Scope) || (defaultScope as Scope) || "me",
   );
   return (
     <Shell

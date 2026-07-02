@@ -24,7 +24,7 @@ DEFAULTS: dict[str, Any] = {
         "autosave_ms": 900,
     },
     "files": {
-        "default_scope": "common",
+        "default_scope": "me",
         "confirm_delete": True,
     },
     "sync": {

@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  NotebookPen, FolderPlus, FilePlus, Trash2, Save, Link2, Users, User, Loader2,
+  NotebookPen, FolderPlus, FilePlus, Trash2, Save, Link2, Loader2,
   FileText, Search, X, Folder, ChevronRight, ChevronDown, Home,
 } from "lucide-react";
 import { Shell } from "../components/layout/Shell";
 import { MarkdownView } from "../components/notes/MarkdownView";
 import { Modal } from "../components/ui/Modal";
-import { api, NoteSummary, NoteDetail, NoteSearchHit, Scope } from "../lib/api";
+import { api, NoteSummary, NoteDetail, NoteSearchHit, Scope, NoteBase } from "../lib/api";
 import { toast } from "../store/toast";
 import { useSettings } from "../store/settings";
 
@@ -53,6 +53,7 @@ function buildTree(folders: string[], notes: NoteSummary[]): TreeNode {
 export function Notes() {
   const prefs = useSettings((st) => st.settings?.notes);
   const [scope, setScope] = useState<Scope>((prefs?.default_scope as Scope) || "me");
+  const [base, setBase] = useState<NoteBase>("notes"); // notes: 노트폴더 / files: 파일 저장소(hdd)
   const [folders, setFolders] = useState<string[]>([]);
   const [notes, setNotes] = useState<NoteSummary[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -80,13 +81,13 @@ export function Notes() {
 
   const reloadTree = useCallback(async () => {
     try {
-      const t = await api.noteTree(scope);
+      const t = await api.noteTree(scope, base);
       setFolders(t.folders);
       setNotes(t.notes);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "목록 실패");
     }
-  }, [scope]);
+  }, [scope, base]);
 
   useEffect(() => {
     reloadTree();
@@ -99,7 +100,7 @@ export function Notes() {
   const openNote = useCallback(
     async (path: string) => {
       try {
-        const d = await api.noteGet(scope, path);
+        const d = await api.noteGet(scope, path, base);
         setCurrent(d.path);
         setContent(d.content);
         setDetail(d);
@@ -111,16 +112,16 @@ export function Notes() {
         toast.error(e instanceof Error ? e.message : "노트 열기 실패");
       }
     },
-    [scope],
+    [scope, base],
   );
 
   const save = useCallback(
     async (path: string, text: string) => {
       setSaving(true);
       try {
-        await api.noteSave(scope, path, text);
+        await api.noteSave(scope, path, text, base);
         setDirty(false);
-        const d = await api.noteGet(scope, path);
+        const d = await api.noteGet(scope, path, base);
         setDetail(d);
         reloadTree();
       } catch (e) {
@@ -129,7 +130,7 @@ export function Notes() {
         setSaving(false);
       }
     },
-    [scope, reloadTree],
+    [scope, base, reloadTree],
   );
 
   const onEdit = (text: string) => {
@@ -182,7 +183,7 @@ export function Notes() {
     setNewName("");
     const path = joinPath(curFolder, name);
     try {
-      await api.noteFolderCreate(scope, path);
+      await api.noteFolderCreate(scope, path, base);
       await reloadTree();
       setExpanded((s) => new Set(s).add(path));
       setCurFolder(path);
@@ -196,7 +197,7 @@ export function Notes() {
     if (!current) return;
     setDelOpen(false);
     try {
-      await api.noteDelete(scope, current);
+      await api.noteDelete(scope, current, base);
       setCurrent(null);
       setContent("");
       setDetail(null);
@@ -212,7 +213,7 @@ export function Notes() {
     const target = delFolder;
     setDelFolder(null);
     try {
-      await api.noteFolderDelete(scope, target);
+      await api.noteFolderDelete(scope, target, base);
       if (curFolder === target || curFolder.startsWith(target + "/")) setCurFolder("");
       reloadTree();
       toast.ok("폴더를 휴지통으로 이동했습니다");
@@ -230,7 +231,7 @@ export function Notes() {
     }
     searchTimer.current = window.setTimeout(async () => {
       try {
-        setHits(await api.noteSearch(scope, v.trim()));
+        setHits(await api.noteSearch(scope, v.trim(), base));
       } catch {
         setHits([]);
       }
@@ -351,17 +352,25 @@ export function Notes() {
     return rows;
   };
 
+  // 소스 선택: 노트 폴더(내/공통) 또는 파일 저장소(내/공통)의 마크다운을 편집
+  const source = `${base}:${scope}`;
+  const onSource = (v: string) => {
+    const [b, s] = v.split(":");
+    setBase(b as NoteBase);
+    setScope(s as Scope);
+  };
   const crumbs = (
-    <div className="inline-flex rounded-md border border-line bg-subtle p-0.5">
-      <button onClick={() => setScope("common")}
-        className={`inline-flex items-center gap-1.5 rounded-sm px-3 py-1 text-[13px] font-medium ${scope === "common" ? "bg-surface text-accent shadow-sm" : "text-fg-muted hover:text-fg"}`}>
-        <Users size={14} /> 공통
-      </button>
-      <button onClick={() => setScope("me")}
-        className={`inline-flex items-center gap-1.5 rounded-sm px-3 py-1 text-[13px] font-medium ${scope === "me" ? "bg-surface text-accent shadow-sm" : "text-fg-muted hover:text-fg"}`}>
-        <User size={14} /> 내 노트
-      </button>
-    </div>
+    <select
+      value={source}
+      onChange={(e) => onSource(e.target.value)}
+      className="input h-8 w-40 py-0 text-[13px]"
+      title="편집할 위치 (노트 폴더 또는 파일 폴더 연결)"
+    >
+      <option value="notes:me">📓 내 노트</option>
+      <option value="notes:common">📓 공통 노트</option>
+      <option value="files:me">📁 내 파일 폴더</option>
+      <option value="files:common">📁 공통 파일 폴더</option>
+    </select>
   );
 
   return (

@@ -10,7 +10,7 @@ from ..auth import SessionUser, require_session
 from ..config import Settings, get_settings
 from ..notes_graph import backlinks_for, build_graph, parse_wikilinks
 from ..security_paths import safe_join, to_rel
-from ..storage import notes_root
+from ..storage import notes_root, scope_root
 from ..trash import move_to_trash
 
 router = APIRouter(prefix="/api/notes", tags=["notes"])
@@ -69,13 +69,28 @@ def _ensure_md(path: str) -> str:
     return path if path.endswith(".md") else f"{path}.md"
 
 
+def _note_root(base: str, scope: str, user: SessionUser, settings: Settings) -> Path:
+    """base='files' → 파일 저장소(scope_root)로 .md 편집, 그 외 → 노트 폴더(notes_root).
+
+    이로써 노트 페이지에서 파일 페이지의 폴더(hdd)를 열어 마크다운을 보고 수정할 수 있다.
+    """
+    if base == "files":
+        return scope_root(scope, user, settings)
+    return notes_root(scope, user, settings)
+
+
+def _trash_kind(base: str) -> str:
+    return "file" if base == "files" else "note"
+
+
 @router.get("/list", response_model=list[NoteSummary])
 def list_notes(
     scope: str = Query("me"),
+    base: str = Query("notes"),
     user: SessionUser = Depends(require_session),
     settings: Settings = Depends(get_settings),
 ):
-    root = notes_root(scope, user, settings)
+    root = _note_root(base, scope, user, settings)
     out = []
     for p in sorted(root.rglob("*.md")):
         if p.is_file():
@@ -90,11 +105,12 @@ def list_notes(
 @router.get("/tree", response_model=NoteTree)
 def notes_tree(
     scope: str = Query("me"),
+    base: str = Query("notes"),
     user: SessionUser = Depends(require_session),
     settings: Settings = Depends(get_settings),
 ):
     """폴더 목록 + 노트 목록. 프론트에서 중첩 트리로 구성."""
-    root = notes_root(scope, user, settings)
+    root = _note_root(base, scope, user, settings)
     folders: list[str] = []
     notes: list[NoteSummary] = []
     for p in sorted(root.rglob("*")):
@@ -111,10 +127,11 @@ def notes_tree(
 def create_folder(
     req: FolderRequest,
     scope: str = Query("me"),
+    base: str = Query("notes"),
     user: SessionUser = Depends(require_session),
     settings: Settings = Depends(get_settings),
 ):
-    root = notes_root(scope, user, settings)
+    root = _note_root(base, scope, user, settings)
     target = safe_join(root, req.path)
     if target == root:
         raise HTTPException(status_code=400, detail="폴더 이름이 비어 있습니다.")
@@ -127,29 +144,31 @@ def create_folder(
 @router.delete("/folder")
 def delete_folder(
     scope: str = Query("me"),
+    base: str = Query("notes"),
     path: str = Query(...),
     user: SessionUser = Depends(require_session),
     settings: Settings = Depends(get_settings),
 ):
     """폴더를 하위 노트와 함께 휴지통으로 이동."""
-    root = notes_root(scope, user, settings)
+    root = _note_root(base, scope, user, settings)
     target = safe_join(root, path)
     if target == root:
         raise HTTPException(status_code=400, detail="루트는 삭제할 수 없습니다.")
     if not target.exists() or not target.is_dir():
         raise HTTPException(status_code=404, detail="폴더를 찾을 수 없습니다.")
-    move_to_trash("note", scope, target, to_rel(root, target), user, settings)
+    move_to_trash(_trash_kind(base), scope, target, to_rel(root, target), user, settings)
     return {"ok": True}
 
 
 @router.get("/get", response_model=NoteDetail)
 def get_note(
     scope: str = Query("me"),
+    base: str = Query("notes"),
     path: str = Query(...),
     user: SessionUser = Depends(require_session),
     settings: Settings = Depends(get_settings),
 ):
-    root = notes_root(scope, user, settings)
+    root = _note_root(base, scope, user, settings)
     target = safe_join(root, _ensure_md(path))
     if not target.exists() or not target.is_file():
         raise HTTPException(status_code=404, detail="노트를 찾을 수 없습니다.")
@@ -167,10 +186,11 @@ def get_note(
 def save_note(
     req: SaveNote,
     scope: str = Query("me"),
+    base: str = Query("notes"),
     user: SessionUser = Depends(require_session),
     settings: Settings = Depends(get_settings),
 ):
-    root = notes_root(scope, user, settings)
+    root = _note_root(base, scope, user, settings)
     target = safe_join(root, _ensure_md(req.path))
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(req.content, encoding="utf-8")
@@ -182,28 +202,30 @@ def save_note(
 @router.delete("/delete")
 def delete_note(
     scope: str = Query("me"),
+    base: str = Query("notes"),
     path: str = Query(...),
     user: SessionUser = Depends(require_session),
     settings: Settings = Depends(get_settings),
 ):
-    root = notes_root(scope, user, settings)
+    root = _note_root(base, scope, user, settings)
     target = safe_join(root, _ensure_md(path))
     if not target.exists():
         raise HTTPException(status_code=404, detail="노트를 찾을 수 없습니다.")
     # 즉시 삭제 대신 휴지통으로 이동
-    move_to_trash("note", scope, target, to_rel(root, target), user, settings)
+    move_to_trash(_trash_kind(base), scope, target, to_rel(root, target), user, settings)
     return {"ok": True}
 
 
 @router.get("/search", response_model=list[SearchHit])
 def search_notes(
     scope: str = Query("me"),
+    base: str = Query("notes"),
     q: str = Query(..., min_length=1),
     user: SessionUser = Depends(require_session),
     settings: Settings = Depends(get_settings),
 ):
     """제목·내용 전문 검색. 매치 스니펫 포함."""
-    root = notes_root(scope, user, settings)
+    root = _note_root(base, scope, user, settings)
     ql = q.lower()
     hits: list[SearchHit] = []
     for p in sorted(root.rglob("*.md")):
@@ -226,10 +248,11 @@ def search_notes(
 @router.get("/graph", response_model=GraphData)
 def graph(
     scope: str = Query("me"),
+    base: str = Query("notes"),
     folder: str = Query(""),
     mode: str = Query("links"),
     user: SessionUser = Depends(require_session),
     settings: Settings = Depends(get_settings),
 ):
-    root = notes_root(scope, user, settings)
+    root = _note_root(base, scope, user, settings)
     return build_graph(root, folder=folder or None, mode=mode)

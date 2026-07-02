@@ -215,6 +215,23 @@ def test_notes_scope_in_files():
     assert any(f["rel"] == "hello.md" for f in man["files"])
 
 
+def test_notes_edit_files_base():
+    # 노트 API로 파일 저장소(base=files)의 .md를 보고 수정
+    c = TestClient(app)
+    c.post("/api/auth/login", json={"username": "tester2", "password": "pw456"})
+    assert c.post("/api/notes/folder?scope=me&base=files", json={"path": "docs"}).status_code == 200
+    r = c.put("/api/notes/save?scope=me&base=files", json={"path": "docs/readme", "content": "# hi files"})
+    assert r.status_code == 200, r.text
+    # 파일 목록(me)에도 실제로 생성됨
+    names = [e["name"] for e in c.get("/api/files/list?scope=me&path=docs").json()["entries"]]
+    assert "readme.md" in names
+    # 노트 트리(base=files)에도 보이고, get으로 읽힘
+    tree = c.get("/api/notes/tree?scope=me&base=files").json()
+    assert any(n["path"] == "docs/readme.md" for n in tree["notes"])
+    d = c.get("/api/notes/get?scope=me&base=files&path=docs/readme").json()
+    assert "hi files" in d["content"]
+
+
 def test_terminal_status_gate():
     _login()
     st = client.get("/api/terminal/status").json()
@@ -378,6 +395,7 @@ if __name__ == "__main__":
     test_trash_restore_flow()
     test_sync_manifest_upload_download()
     test_notes_scope_in_files()
+    test_notes_edit_files_base()
     test_terminal_status_gate()
     test_settings_get_patch()
     test_calendar_recurrence_and_reminders()

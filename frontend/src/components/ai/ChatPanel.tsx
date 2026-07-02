@@ -76,6 +76,7 @@ export function ChatPanel({
   const [busy, setBusy] = useState(false);
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     api.aiStatus().then((s) => setEnabled(s.enabled)).catch(() => setEnabled(false));
@@ -84,6 +85,14 @@ export function ChatPanel({
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // 입력 내용에 맞춰 textarea 높이 자동 조절(장문이면 줄바꿈되며 늘어남, 최대 높이까지)
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [input]);
 
   const send = async (text: string) => {
     if (!text.trim() || busy) return;
@@ -206,16 +215,25 @@ export function ChatPanel({
         <div ref={endRef} />
       </div>
 
-      <div className="mt-3 flex gap-2">
-        <input
+      <div className="mt-3 flex items-end gap-2">
+        <textarea
+          ref={inputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && send(input)}
-          placeholder="메시지를 입력하세요…"
+          onKeyDown={(e) => {
+            // Enter=전송, Shift+Enter=줄바꿈
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              send(input);
+            }
+          }}
+          placeholder="메시지를 입력하세요… (Shift+Enter 줄바꿈)"
           disabled={busy}
-          className="input flex-1"
+          rows={1}
+          className="input flex-1 resize-none !h-auto min-h-[2.25rem] py-2 leading-relaxed [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          style={{ maxHeight: 160, overflowY: "auto" }}
         />
-        <button onClick={() => send(input)} disabled={busy || !input.trim()} className="btn btn-primary px-4">
+        <button onClick={() => send(input)} disabled={busy || !input.trim()} className="btn btn-primary h-9 px-4">
           {busy ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
         </button>
       </div>
