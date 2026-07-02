@@ -232,6 +232,21 @@ def test_notes_edit_files_base():
     assert "hi files" in d["content"]
 
 
+def test_google_allday_end_conversion():
+    from backend.calendar_google import _to_internal, _to_google
+    # 구글(배타적 end.date) → 내부(포함): 7/1~7/2(이틀) = 구글 end.date 7/3 → 내부 end 7/2
+    g = {"id": "x", "summary": "t", "start": {"date": "2026-07-01"}, "end": {"date": "2026-07-03"}}
+    internal = _to_internal(g)
+    assert internal["start"] == "2026-07-01" and internal["end"] == "2026-07-02"
+    assert internal["allDay"] is True
+    # 내부(포함) → 구글(배타적): 7/1~7/2 = 내부 end 7/2 → 구글 end.date 7/3
+    body = _to_google({"title": "t", "allDay": True, "start": "2026-07-01", "end": "2026-07-02"})
+    assert body["start"]["date"] == "2026-07-01" and body["end"]["date"] == "2026-07-03"
+    # 시간 일정은 날짜 변환 없음
+    g2 = {"start": {"dateTime": "2026-07-01T09:00:00+09:00"}, "end": {"dateTime": "2026-07-01T10:00:00+09:00"}}
+    assert _to_internal(g2)["allDay"] is False
+
+
 def test_terminal_status_gate():
     _login()
     st = client.get("/api/terminal/status").json()
@@ -396,6 +411,7 @@ if __name__ == "__main__":
     test_sync_manifest_upload_download()
     test_notes_scope_in_files()
     test_notes_edit_files_base()
+    test_google_allday_end_conversion()
     test_terminal_status_gate()
     test_settings_get_patch()
     test_calendar_recurrence_and_reminders()

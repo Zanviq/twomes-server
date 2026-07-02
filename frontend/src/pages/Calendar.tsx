@@ -101,11 +101,20 @@ export function Calendar() {
     }
   };
 
+  // 종일 일정의 종료일은 모델에선 '포함(inclusive)'이지만 FullCalendar는 '배타적' →
+  // 마지막 날이 그려지도록 +1일 해서 넘긴다. (시간 일정은 그대로)
+  const addDay = (d: string) => {
+    const dt = new Date(`${d.slice(0, 10)}T00:00:00`);
+    dt.setDate(dt.getDate() + 1);
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
+  };
+
   const fcEvents = events.map((e) => ({
     id: e.id,
     title: e.title,
     start: e.start,
-    end: e.end,
+    end: e.allDay && e.end ? addDay(e.end) : e.end,
     allDay: e.allDay,
     backgroundColor: GCAL_COLORS[e.color] ?? GCAL_COLORS["2"],
     borderColor: GCAL_COLORS[e.color] ?? GCAL_COLORS["2"],

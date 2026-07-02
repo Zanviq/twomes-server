@@ -8,10 +8,19 @@ from __future__ import annotations
 import json
 import logging
 import os
+from datetime import date, timedelta
 
 from .config import Settings
 
 logger = logging.getLogger("server.gcal")
+
+
+def _shift_date(d: str, days: int) -> str:
+    """'YYYY-MM-DD'에 일수를 더해 반환. 종일 일정 종료일 포함↔배타 변환용."""
+    try:
+        return (date.fromisoformat(d[:10]) + timedelta(days=days)).isoformat()
+    except Exception:
+        return d[:10]
 
 
 def _read_maybe_file(value: str) -> str:
@@ -56,12 +65,17 @@ def _to_internal(g: dict) -> dict:
     start = g.get("start", {})
     end = g.get("end", {})
     all_day = "date" in start
+    start_v = start.get("dateTime") or start.get("date") or ""
+    end_v = end.get("dateTime") or end.get("date") or ""
+    # 구글 종일 일정의 end.date는 '배타적'(마지막 날 +1) → 내부 모델은 '포함'으로 통일
+    if all_day and end_v:
+        end_v = _shift_date(end_v, -1)
     return {
         "id": g.get("id", ""),
         "title": g.get("summary", ""),
         "description": g.get("description", ""),
-        "start": start.get("dateTime") or start.get("date") or "",
-        "end": end.get("dateTime") or end.get("date") or "",
+        "start": start_v,
+        "end": end_v,
         "allDay": all_day,
         "color": g.get("colorId", "2"),
     }
@@ -76,7 +90,9 @@ def _to_google(p: dict) -> dict:
     }
     if all_day:
         body["start"] = {"date": p["start"][:10]}
-        body["end"] = {"date": (p.get("end") or p["start"])[:10]}
+        # 내부 모델의 종료일은 '포함' → 구글엔 '배타적'(+1일)으로 보냄
+        inc_end = (p.get("end") or p["start"])[:10]
+        body["end"] = {"date": _shift_date(inc_end, 1)}
     else:
         body["start"] = {"dateTime": p["start"], "timeZone": "Asia/Seoul"}
         body["end"] = {"dateTime": p.get("end") or p["start"], "timeZone": "Asia/Seoul"}
