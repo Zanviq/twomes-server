@@ -141,6 +141,36 @@ def test_service_list_search():
     assert "nodi" in service.list_projects(s)
 
 
+def test_append_concurrent_no_loss():
+    """동시 append가 스냅샷 경쟁으로 쓰기를 잃지 않는지(임계구역 내 재계산 + 재시도)."""
+    import threading
+    from backend.config import Settings
+    from backend.aidoc import db, paths, service
+    from backend.aidoc.schemas import CreateDoc, AppendDoc
+    s = Settings(); db.init_db(s); paths.ensure_layout(s)
+    a = service.Actor("t")
+    did = service.create(s, a, CreateDoc(title="concat", content="", project="nodi"))["id"]
+    n = 5
+    errors = []
+
+    def worker(i):
+        try:
+            service.append(s, a, did, AppendDoc(content=f"L{i}\n"))
+        except Exception as e:  # noqa: BLE001
+            errors.append((i, repr(e)))
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert not errors, errors
+    final = service.get(s, did)["content"]
+    for i in range(n):
+        assert f"L{i}\n" in final, f"lost L{i}: {final!r}"  # 모든 append 보존
+    assert service.get(s, did)["version"] == n + 1  # v1(생성) + n회 append
+
+
 def test_service_move_trash_restore():
     from backend.config import Settings
     from backend.aidoc import db, paths, service
@@ -390,6 +420,13 @@ def test_mcp_tools_call_roundtrip():
     miss = c.post("/mcp", json={"jsonrpc": "2.0", "id": 4, "method": "tools/call",
                                 "params": {"name": "get_document", "arguments": {}}}, headers=h).json()
     assert miss["result"]["isError"] is True
+    # 잘못된 타입 인자(expected_version 비정수) → 500이 아니라 JSON-RPC isError로
+    r = c.post("/mcp", json={"jsonrpc": "2.0", "id": 5, "method": "tools/call",
+                             "params": {"name": "update_document",
+                                        "arguments": {"document_id": did, "expected_version": "x", "content": "y"}}},
+               headers=h)
+    assert r.status_code == 200
+    assert r.json()["result"]["isError"] is True
 
 
 def _make_access_credentials(team: str, aud: str, *, exp_delta=300, iss=None):
@@ -501,6 +538,7 @@ if __name__ == "__main__":
     test_schemas()
     test_service_create_get()
     test_service_update_conflict_and_append()
+    test_append_concurrent_no_loss()
     test_service_move_trash_restore()
     test_service_list_search()
     test_path_traversal_defense()

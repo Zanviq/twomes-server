@@ -121,5 +121,9 @@ def _handle_one(settings: Settings, principal: Principal, msg) -> dict | None:
             detail = {"error": e.code, "message": e.message, **e.extra}
             text = json.dumps(detail, ensure_ascii=False)
             return _rpc_result(req_id, {"content": [{"type": "text", "text": text}], "isError": True})
+        except Exception as e:  # noqa: BLE001 - 잘못된 인자(ValueError/ValidationError 등)도 JSON-RPC로
+            detail = {"error": "BAD_REQUEST", "message": f"도구 인자 오류: {e}"}
+            text = json.dumps(detail, ensure_ascii=False)
+            return _rpc_result(req_id, {"content": [{"type": "text", "text": text}], "isError": True})
 
     return _rpc_error(req_id, _METHOD_NOT_FOUND, f"알 수 없는 메서드: {method}")

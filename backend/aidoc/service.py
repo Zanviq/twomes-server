@@ -109,82 +109,85 @@ def get_project(settings: Settings, doc_id: str) -> str | None:
         conn.close()
 
 
-def _apply_new_content(settings, actor, doc_id, new_title, new_content, change_summary,
+def _apply_new_content(settings, actor, doc_id, new_title, mutate, change_summary,
                        expected_version=None) -> dict:
-    """새 본문으로 새 버전 생성. 낙관적 잠금은 `UPDATE ... WHERE version=?`로 원자 보장.
+    """새 본문으로 새 버전 생성. 새 본문은 **임계구역 안에서 최신 본문으로부터** 계산한다.
 
-    순서가 핵심: (1) 조건부 DB 갱신으로 버전 검증 → (2) 통과 시에만 파일 기록 →
-    (3) commit. 파일 기록이 실패하면 커밋 전이라 트랜잭션이 롤백되어 DB·파일이 일관.
-    충돌(경쟁 쓰기/기대버전 불일치) 시 파일을 건드리지 않는다.
+    `mutate(old_content) -> new_content` 는 항상 방금 읽은 최신 본문을 받아 새 본문을 만든다
+    → append/복원처럼 이전 본문에 의존하는 연산이 스냅샷 경쟁으로 쓰기를 잃지 않는다.
+
+    낙관적 잠금은 `UPDATE ... WHERE version=?`로 원자 보장:
+      (1) 조건부 DB 갱신으로 버전 검증 → (2) 통과 시에만 파일 기록 → (3) commit.
+      파일 기록 실패 시 커밋 전이라 롤백되어 DB·파일이 일관. 충돌 시 파일을 건드리지 않는다.
+    - expected_version 지정(update): 기대와 다르면 즉시 VersionConflict(409).
+    - expected_version 미지정(append/복원): 경쟁 쓰기로 실패하면 최신 본문으로 몇 회 재시도.
     """
-    if len(new_content.encode("utf-8")) > settings.aidoc_max_bytes:
-        raise BadRequest("본문이 너무 큽니다.")
-    conn = db.connect(settings)
-    try:
-        row = _get_row(conn, doc_id)
-        cur_version = row["version"]
-        if expected_version is not None and expected_version != cur_version:
-            raise VersionConflict(expected_version, cur_version)
-        old_content = store.read(settings, row["storage_path"])
-        new_version = cur_version + 1
-        title = new_title if new_title is not None else row["title"]
-        now = _now()
-        hist_rel = f".history/{doc_id}/{cur_version:04d}.md"
-        # 원자적 잠금: 우리가 읽은 버전일 때만 갱신 → 경쟁 쓰기는 rowcount 0으로 검출.
-        res = conn.execute(
-            "UPDATE documents SET title=?,content_hash=?,version=?,updated_by=?,updated_at=? "
-            "WHERE id=? AND version=?",
-            (title, store.sha256(new_content), new_version, actor.name, now, doc_id, cur_version),
-        )
-        if res.rowcount != 1:
-            latest = conn.execute("SELECT version FROM documents WHERE id=?", (doc_id,)).fetchone()
-            raise VersionConflict(
-                expected_version if expected_version is not None else cur_version,
-                latest["version"] if latest else cur_version,
+    attempts = 1 if expected_version is not None else 16
+    for attempt in range(attempts):
+        conn = db.connect(settings)
+        try:
+            row = _get_row(conn, doc_id)
+            cur_version = row["version"]
+            if expected_version is not None and expected_version != cur_version:
+                raise VersionConflict(expected_version, cur_version)
+            old_content = store.read(settings, row["storage_path"])
+            new_content = mutate(old_content)  # 최신 본문 기준으로 새 본문 계산(임계구역 내)
+            if len(new_content.encode("utf-8")) > settings.aidoc_max_bytes:
+                raise BadRequest("본문이 너무 큽니다.")
+            new_version = cur_version + 1
+            title = new_title if new_title is not None else row["title"]
+            now = _now()
+            hist_rel = f".history/{doc_id}/{cur_version:04d}.md"
+            # 원자적 잠금: 우리가 읽은 버전일 때만 갱신 → 경쟁 쓰기는 rowcount 0으로 검출.
+            res = conn.execute(
+                "UPDATE documents SET title=?,content_hash=?,version=?,updated_by=?,updated_at=? "
+                "WHERE id=? AND version=?",
+                (title, store.sha256(new_content), new_version, actor.name, now, doc_id, cur_version),
             )
-        conn.execute(
-            "INSERT INTO document_versions(doc_id,version,actor,change_summary,prev_hash,new_hash,history_path,created_at)"
-            " VALUES (?,?,?,?,?,?,?,?)",
-            (doc_id, cur_version, actor.name, change_summary, store.sha256(old_content),
-             store.sha256(new_content), hist_rel, now),
-        )
-        tags = json.loads(row["tags"] or "[]")
-        _index_fts(conn, doc_id, title, new_content, tags, row["project"], row["category"])
-        audit.log(conn, actor.name, "update_document", doc_id=doc_id, project=row["project"],
-                  from_version=cur_version, to_version=new_version, change_summary=change_summary)
-        # DB 검증을 통과한 뒤에야 파일 기록(이전본 백업 + 원자 교체). 실패 시 아래 close에서 롤백.
-        store.backup_and_write(settings, doc_id, row["storage_path"], new_content, old_content, cur_version)
-        conn.commit()
-        out = _get_row(conn, doc_id)
-    finally:
-        conn.close()
-    meta = _row_to_meta(out)
-    meta["content"] = new_content
-    return meta
+            if res.rowcount != 1:
+                if expected_version is None and attempt < attempts - 1:
+                    continue  # 경쟁 쓰기 — 최신 본문으로 재시도(finally가 conn 닫음)
+                latest = conn.execute("SELECT version FROM documents WHERE id=?", (doc_id,)).fetchone()
+                raise VersionConflict(
+                    expected_version if expected_version is not None else cur_version,
+                    latest["version"] if latest else cur_version,
+                )
+            conn.execute(
+                "INSERT INTO document_versions(doc_id,version,actor,change_summary,prev_hash,new_hash,history_path,created_at)"
+                " VALUES (?,?,?,?,?,?,?,?)",
+                (doc_id, cur_version, actor.name, change_summary, store.sha256(old_content),
+                 store.sha256(new_content), hist_rel, now),
+            )
+            tags = json.loads(row["tags"] or "[]")
+            _index_fts(conn, doc_id, title, new_content, tags, row["project"], row["category"])
+            audit.log(conn, actor.name, "update_document", doc_id=doc_id, project=row["project"],
+                      from_version=cur_version, to_version=new_version, change_summary=change_summary)
+            # DB 검증을 통과한 뒤에야 파일 기록(이전본 백업 + 원자 교체). 실패 시 아래 close에서 롤백.
+            store.backup_and_write(settings, doc_id, row["storage_path"], new_content, old_content, cur_version)
+            conn.commit()
+            out = _get_row(conn, doc_id)
+            meta = _row_to_meta(out)
+            meta["content"] = new_content
+            return meta
+        finally:
+            conn.close()
+    # 재시도 소진(극히 드묾): 최신 버전으로 충돌 보고
+    raise VersionConflict(0, cur_version)  # pragma: no cover
 
 
 def update(settings, actor: Actor, doc_id: str, data: UpdateDoc) -> dict:
-    # 내용 미지정(제목만 변경 등)이면 현재 본문 유지.
-    conn = db.connect(settings)
-    try:
-        row = _get_row(conn, doc_id)
-        new_content = data.content if data.content is not None else store.read(settings, row["storage_path"])
-    finally:
-        conn.close()
-    return _apply_new_content(settings, actor, doc_id, data.title, new_content,
+    # 내용 미지정(제목만 변경 등)이면 최신 본문 유지. 새 내용이면 전체 교체.
+    def mutate(old: str) -> str:
+        return data.content if data.content is not None else old
+    return _apply_new_content(settings, actor, doc_id, data.title, mutate,
                               data.change_summary, expected_version=data.expected_version)
 
 
 def append(settings, actor: Actor, doc_id: str, data: AppendDoc) -> dict:
-    conn = db.connect(settings)
-    try:
-        row = _get_row(conn, doc_id)
-        current = store.read(settings, row["storage_path"])
-    finally:
-        conn.close()
-    sep = "" if (not current or current.endswith("\n")) else "\n"
-    joined = current + sep + data.content
-    return _apply_new_content(settings, actor, doc_id, None, joined, data.change_summary or "append")
+    def mutate(old: str) -> str:
+        sep = "" if (not old or old.endswith("\n")) else "\n"
+        return old + sep + data.content
+    return _apply_new_content(settings, actor, doc_id, None, mutate, data.change_summary or "append")
 
 
 def get_history(settings, doc_id: str) -> list[dict]:
@@ -233,6 +236,9 @@ def move(settings, actor: Actor, doc_id: str, target_project=None, target_folder
         dst = f"{dir_rel}/{fname}"
         store.move_file(settings, row["storage_path"], dst)
         _update_path(conn, doc_id, dst, project=project)
+        # project 변경 → FTS 색인의 project 항목도 최신화(검색 일관성).
+        _index_fts(conn, doc_id, row["title"], store.read(settings, dst),
+                   json.loads(row["tags"] or "[]"), project, row["category"])
         audit.log(conn, actor.name, "move_document", doc_id=doc_id, project=project,
                   change_summary=f"{row['storage_path']} -> {dst}")
         conn.commit()
@@ -280,15 +286,17 @@ def restore(settings, actor: Actor, doc_id: str, version=None) -> dict:
             proj = parts[1] if len(parts) >= 2 and parts[0] == "projects" else None
             store.move_file(settings, row["storage_path"], dst)
             _update_path(conn, doc_id, dst, project=proj, set_trash=False, orig_path="")
+            _index_fts(conn, doc_id, row["title"], store.read(settings, dst),
+                       json.loads(row["tags"] or "[]"), proj, row["category"])
             audit.log(conn, actor.name, "restore_document", doc_id=doc_id, project=proj)
             conn.commit()
             out = _get_row(conn, doc_id)
         finally:
             conn.close()
         meta = _row_to_meta(out); meta["content"] = store.read(settings, out["storage_path"]); return meta
-    # 특정 버전 내용으로 복원 = 새 버전 생성
+    # 특정 버전 내용으로 복원 = 그 버전 본문으로 교체하는 새 버전 생성(의도적 덮어쓰기).
     hist = store.read(settings, f".history/{doc_id}/{int(version):04d}.md")
-    return _apply_new_content(settings, actor, doc_id, None, hist, f"restore v{version}")
+    return _apply_new_content(settings, actor, doc_id, None, lambda _old: hist, f"restore v{version}")
 
 
 def list_docs(settings, *, project=None, category=None, tag=None, status=None,

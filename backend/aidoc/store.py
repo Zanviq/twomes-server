@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import threading
 
 from ..config import Settings
 from .errors import NotFound, StorageError
@@ -22,7 +23,7 @@ def read(settings: Settings, storage_path: str) -> str:
 
 def _atomic_write(target, content: str) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
-    tmp = target.with_suffix(target.suffix + f".tmp{os.getpid()}")
+    tmp = target.with_suffix(target.suffix + f".tmp{os.getpid()}-{threading.get_ident()}")
     try:
         with tmp.open("w", encoding="utf-8") as f:
             f.write(content)

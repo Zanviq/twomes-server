@@ -67,6 +67,7 @@ def connect(settings: Settings) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")  # 쓰기 경쟁 시 5s 대기 후 실패(잠금 오류 완화)
     return conn
 
 
