@@ -109,24 +109,39 @@ def get_project(settings: Settings, doc_id: str) -> str | None:
         conn.close()
 
 
-def _apply_new_content(settings, actor, doc_id, new_title, new_content, change_summary) -> dict:
+def _apply_new_content(settings, actor, doc_id, new_title, new_content, change_summary,
+                       expected_version=None) -> dict:
+    """새 본문으로 새 버전 생성. 낙관적 잠금은 `UPDATE ... WHERE version=?`로 원자 보장.
+
+    순서가 핵심: (1) 조건부 DB 갱신으로 버전 검증 → (2) 통과 시에만 파일 기록 →
+    (3) commit. 파일 기록이 실패하면 커밋 전이라 트랜잭션이 롤백되어 DB·파일이 일관.
+    충돌(경쟁 쓰기/기대버전 불일치) 시 파일을 건드리지 않는다.
+    """
     if len(new_content.encode("utf-8")) > settings.aidoc_max_bytes:
         raise BadRequest("본문이 너무 큽니다.")
     conn = db.connect(settings)
     try:
         row = _get_row(conn, doc_id)
-        old_content = store.read(settings, row["storage_path"])
         cur_version = row["version"]
-        hist_rel = store.backup_and_write(
-            settings, doc_id, row["storage_path"], new_content, old_content, cur_version
-        )
+        if expected_version is not None and expected_version != cur_version:
+            raise VersionConflict(expected_version, cur_version)
+        old_content = store.read(settings, row["storage_path"])
         new_version = cur_version + 1
         title = new_title if new_title is not None else row["title"]
         now = _now()
-        conn.execute(
-            "UPDATE documents SET title=?,content_hash=?,version=?,updated_by=?,updated_at=? WHERE id=?",
-            (title, store.sha256(new_content), new_version, actor.name, now, doc_id),
+        hist_rel = f".history/{doc_id}/{cur_version:04d}.md"
+        # 원자적 잠금: 우리가 읽은 버전일 때만 갱신 → 경쟁 쓰기는 rowcount 0으로 검출.
+        res = conn.execute(
+            "UPDATE documents SET title=?,content_hash=?,version=?,updated_by=?,updated_at=? "
+            "WHERE id=? AND version=?",
+            (title, store.sha256(new_content), new_version, actor.name, now, doc_id, cur_version),
         )
+        if res.rowcount != 1:
+            latest = conn.execute("SELECT version FROM documents WHERE id=?", (doc_id,)).fetchone()
+            raise VersionConflict(
+                expected_version if expected_version is not None else cur_version,
+                latest["version"] if latest else cur_version,
+            )
         conn.execute(
             "INSERT INTO document_versions(doc_id,version,actor,change_summary,prev_hash,new_hash,history_path,created_at)"
             " VALUES (?,?,?,?,?,?,?,?)",
@@ -137,6 +152,8 @@ def _apply_new_content(settings, actor, doc_id, new_title, new_content, change_s
         _index_fts(conn, doc_id, title, new_content, tags, row["project"], row["category"])
         audit.log(conn, actor.name, "update_document", doc_id=doc_id, project=row["project"],
                   from_version=cur_version, to_version=new_version, change_summary=change_summary)
+        # DB 검증을 통과한 뒤에야 파일 기록(이전본 백업 + 원자 교체). 실패 시 아래 close에서 롤백.
+        store.backup_and_write(settings, doc_id, row["storage_path"], new_content, old_content, cur_version)
         conn.commit()
         out = _get_row(conn, doc_id)
     finally:
@@ -147,16 +164,15 @@ def _apply_new_content(settings, actor, doc_id, new_title, new_content, change_s
 
 
 def update(settings, actor: Actor, doc_id: str, data: UpdateDoc) -> dict:
+    # 내용 미지정(제목만 변경 등)이면 현재 본문 유지.
     conn = db.connect(settings)
     try:
         row = _get_row(conn, doc_id)
-        cur = row["version"]
+        new_content = data.content if data.content is not None else store.read(settings, row["storage_path"])
     finally:
         conn.close()
-    if data.expected_version != cur:
-        raise VersionConflict(data.expected_version, cur)
-    new_content = data.content if data.content is not None else store.read(settings, row["storage_path"])
-    return _apply_new_content(settings, actor, doc_id, data.title, new_content, data.change_summary)
+    return _apply_new_content(settings, actor, doc_id, data.title, new_content,
+                              data.change_summary, expected_version=data.expected_version)
 
 
 def append(settings, actor: Actor, doc_id: str, data: AppendDoc) -> dict:

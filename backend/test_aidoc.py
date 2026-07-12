@@ -166,11 +166,12 @@ def test_service_update_conflict_and_append():
     doc = service.create(s, a, CreateDoc(title="C", content="one\n", project="nodi"))
     up = service.update(s, service.Actor("codex"), doc["id"], UpdateDoc(expected_version=1, content="two\n", change_summary="교체"))
     assert up["version"] == 2 and up["content"] == "two\n"
-    # 잘못된 기대버전 → 409
+    # 잘못된 기대버전 → 409, 그리고 충돌 시 파일이 손상되지 않아야 함
     try:
         service.update(s, a, doc["id"], UpdateDoc(expected_version=1, content="three\n")); assert False
     except VersionConflict as e:
         assert e.extra == {"expected_version": 1, "current_version": 2}
+    assert service.get(s, doc["id"])["content"] == "two\n"  # 충돌은 파일을 건드리지 않음
     # history 보존
     hist = service.get_history(s, doc["id"])
     assert any(h["version"] == 1 for h in hist)
