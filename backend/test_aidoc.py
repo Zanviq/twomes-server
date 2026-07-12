@@ -72,10 +72,24 @@ def test_db_init():
     conn.close()
 
 
+def test_store_atomic_and_history():
+    from backend.config import Settings
+    from backend.aidoc import store, paths
+    s = Settings(); paths.ensure_layout(s)
+    rel = "inbox/x.md"
+    store.write_new(s, rel, "v1\n")
+    assert store.read(s, rel) == "v1\n"
+    hrel = store.backup_and_write(s, "doc_TEST", rel, "v2\n", "v1\n", 1)
+    assert store.read(s, rel) == "v2\n"
+    assert store.read(s, hrel) == "v1\n"  # 이전본 보존
+    assert hrel == ".history/doc_TEST/0001.md"
+
+
 if __name__ == "__main__":
     test_settings_aidoc()
     test_ids()
     test_errors()
     test_paths()
     test_db_init()
+    test_store_atomic_and_history()
     print("ALL AIDOC TESTS PASSED")
