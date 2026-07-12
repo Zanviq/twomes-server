@@ -60,9 +60,22 @@ def test_paths():
         pass
 
 
+def test_db_init():
+    from backend.config import Settings
+    from backend.aidoc import db
+    s = Settings()
+    db.init_db(s)
+    conn = db.connect(s)
+    tables = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type IN ('table','view')")}
+    assert {"documents", "document_versions", "audit_logs", "documents_fts"} <= tables
+    assert db.has_fts5(conn) is True
+    conn.close()
+
+
 if __name__ == "__main__":
     test_settings_aidoc()
     test_ids()
     test_errors()
     test_paths()
+    test_db_init()
     print("ALL AIDOC TESTS PASSED")
