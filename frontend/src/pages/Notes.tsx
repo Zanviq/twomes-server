@@ -268,6 +268,8 @@ export function Notes() {
 
   // 파일관리(notes 스코프)에서 정확한 경로로 노트 열기 — 개인 노트(me) 기준
   const openExactPath = useCallback(async (path: string) => {
+    setAiDocMode(false);
+    setBase("notes");
     setScope("me");
     try {
       const d = await api.noteGet("me", path);
@@ -279,6 +281,28 @@ export function Notes() {
       setCurFolder(slash >= 0 ? d.path.slice(0, slash) : "");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "노트 열기 실패");
+    }
+  }, []);
+
+  // 파일 폴더(me/common)의 문서를 노트 편집기에서 열기(파일 base). 파일 페이지 더블클릭 진입.
+  const openFileInEditor = useCallback(async (spec: string) => {
+    const idx = spec.indexOf(":");
+    if (idx < 0) return;
+    const sc = spec.slice(0, idx) as Scope;
+    const p = spec.slice(idx + 1);
+    setAiDocMode(false);
+    setBase("files");
+    setScope(sc);
+    try {
+      const d = await api.noteGet(sc, p, "files");
+      setCurrent(d.path);
+      setContent(d.content);
+      setDetail(d);
+      setDirty(false);
+      const slash = d.path.lastIndexOf("/");
+      setCurFolder(slash >= 0 ? d.path.slice(0, slash) : "");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "파일 열기 실패");
     }
   }, []);
 
@@ -302,10 +326,15 @@ export function Notes() {
   useEffect(() => {
     const open = params.get("open");
     const path = params.get("path");
+    const edit = params.get("edit");
     const file = params.get("file");
     if (path) {
       openExactPath(path);
       params.delete("path");
+      setParams(params, { replace: true });
+    } else if (edit) {
+      openFileInEditor(edit);
+      params.delete("edit");
       setParams(params, { replace: true });
     } else if (file) {
       openFilePreview(file);
@@ -316,7 +345,7 @@ export function Notes() {
       params.delete("open");
       setParams(params, { replace: true });
     }
-  }, [params, notes, openByTitle, openExactPath, openFilePreview, setParams]);
+  }, [params, notes, openByTitle, openExactPath, openFileInEditor, openFilePreview, setParams]);
 
   const toggleFolder = (path: string) => {
     setCurFolder(path);
@@ -390,11 +419,11 @@ export function Notes() {
       className="h-8 cursor-pointer appearance-none rounded-md border border-line bg-subtle px-3 text-center text-[13px] font-medium text-accent outline-none transition-colors hover:border-line-strong focus:border-accent"
       title="편집할 위치 (노트 폴더 / 파일 폴더 / AI 문서)"
     >
-      <option value="notes:me">📓 내 노트</option>
-      <option value="notes:common">📓 공통 노트</option>
-      <option value="files:me">📁 내 파일 폴더</option>
-      <option value="files:common">📁 공통 파일 폴더</option>
-      <option value="aidoc">🤖 AI 문서</option>
+      <option value="notes:me">내 노트</option>
+      <option value="notes:common">공통 노트</option>
+      <option value="files:me">내 파일 폴더</option>
+      <option value="files:common">공통 파일 폴더</option>
+      <option value="aidoc">AI 문서</option>
     </select>
   );
 

@@ -11,7 +11,6 @@ import { Modal } from "../ui/Modal";
 import { FileViewer } from "./FileViewer";
 import { useSettings } from "../../store/settings";
 
-const isMarkdown = (name: string) => /\.md$/i.test(name);
 const isDoc = (name: string) => /\.(md|txt|markdown|text)$/i.test(name);
 
 const KIND_ICON: Record<string, typeof FileIcon> = {
@@ -64,13 +63,13 @@ export function FileExplorer({
 
   const navigate = useNavigate();
 
-  /** 문서(.md/.txt) 더블클릭 → 노트 페이지에서 보기.
-   *  notes 스코프의 .md 는 편집 가능한 노트로, 그 외 문서는 읽기 전용 미리보기로. */
+  /** 문서(.md/.txt) 더블클릭 → 노트 페이지 편집기에서 열기(모달 미리보기 X).
+   *  notes 스코프는 노트 편집기(notes base), 파일 스코프는 파일 편집기(files base). */
   const openInNotes = (e: FileEntry) => {
-    if (scope === "notes" && isMarkdown(e.name)) {
+    if (scope === "notes") {
       navigate(`/notes?path=${encodeURIComponent(e.path)}`);
     } else {
-      navigate(`/notes?file=${encodeURIComponent(scope + ":" + e.path)}`);
+      navigate(`/notes?edit=${encodeURIComponent(scope + ":" + e.path)}`);
     }
   };
 

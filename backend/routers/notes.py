@@ -69,6 +69,29 @@ def _ensure_md(path: str) -> str:
     return path if path.endswith(".md") else f"{path}.md"
 
 
+# 파일 base에서 노트 편집기로 열 수 있는 텍스트 확장자
+_TEXT_EXTS = (".md", ".txt", ".markdown", ".text")
+
+
+def _resolve_name(base: str, path: str) -> str:
+    """경로 정규화. notes base는 .md 강제, files base는 텍스트 확장자(.md/.txt 등)를 유지.
+
+    파일 페이지에서 .txt/.md 문서를 노트 편집기로 열고 저장할 수 있게 한다.
+    """
+    if base == "files":
+        if any(path.lower().endswith(e) for e in _TEXT_EXTS):
+            return path  # 실제 확장자 유지(.txt 등)
+        return f"{path}.md"
+    return _ensure_md(path)
+
+
+def _is_listed(base: str, p: Path) -> bool:
+    """목록/트리에 노출할 파일인지. files base는 텍스트 문서 전체, notes base는 .md만."""
+    if base == "files":
+        return p.suffix.lower() in _TEXT_EXTS
+    return p.suffix == ".md"
+
+
 def _note_root(base: str, scope: str, user: SessionUser, settings: Settings) -> Path:
     """base='files' → 파일 저장소(scope_root)로 .md 편집, 그 외 → 노트 폴더(notes_root).
 
@@ -92,8 +115,8 @@ def list_notes(
 ):
     root = _note_root(base, scope, user, settings)
     out = []
-    for p in sorted(root.rglob("*.md")):
-        if p.is_file():
+    for p in sorted(root.rglob("*")):
+        if p.is_file() and _is_listed(base, p):
             out.append(
                 NoteSummary(
                     path=to_rel(root, p), title=p.stem, modified=p.stat().st_mtime
@@ -116,7 +139,7 @@ def notes_tree(
     for p in sorted(root.rglob("*")):
         if p.is_dir():
             folders.append(to_rel(root, p))
-        elif p.is_file() and p.suffix == ".md":
+        elif p.is_file() and _is_listed(base, p):
             notes.append(
                 NoteSummary(path=to_rel(root, p), title=p.stem, modified=p.stat().st_mtime)
             )
@@ -169,7 +192,7 @@ def get_note(
     settings: Settings = Depends(get_settings),
 ):
     root = _note_root(base, scope, user, settings)
-    target = safe_join(root, _ensure_md(path))
+    target = safe_join(root, _resolve_name(base, path))
     if not target.exists() or not target.is_file():
         raise HTTPException(status_code=404, detail="노트를 찾을 수 없습니다.")
     content = target.read_text(encoding="utf-8", errors="replace")
@@ -191,7 +214,7 @@ def save_note(
     settings: Settings = Depends(get_settings),
 ):
     root = _note_root(base, scope, user, settings)
-    target = safe_join(root, _ensure_md(req.path))
+    target = safe_join(root, _resolve_name(base, req.path))
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(req.content, encoding="utf-8")
     return NoteSummary(
@@ -208,7 +231,7 @@ def delete_note(
     settings: Settings = Depends(get_settings),
 ):
     root = _note_root(base, scope, user, settings)
-    target = safe_join(root, _ensure_md(path))
+    target = safe_join(root, _resolve_name(base, path))
     if not target.exists():
         raise HTTPException(status_code=404, detail="노트를 찾을 수 없습니다.")
     # 즉시 삭제 대신 휴지통으로 이동
