@@ -26,3 +26,7 @@ frontend/build/
 Thumbs.db
 .vscode/
 .idea/
+
+# AI 문서 토큰/로컬 DB
+aidoc/tokens.json
+data/aidoc/

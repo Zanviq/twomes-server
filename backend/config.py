@@ -105,6 +105,23 @@ class Settings:
             os.getenv("MAX_UPLOAD_BYTES", str(2 * 1024 * 1024 * 1024))
         )
 
+        # ── AI 문서 시스템 ──
+        self.document_root: Path = Path(
+            os.getenv("DOCUMENT_ROOT", str(self.storage_root / "AI_documents"))
+        ).resolve()
+        self.aidoc_db_path: Path = Path(
+            os.getenv("AIDOC_DB_PATH", str(self.storage_root / "aidoc" / "documents.db"))
+        )
+        self.aidoc_tokens_file: str = os.getenv(
+            "AIDOC_TOKENS_FILE", str(self.storage_root / "aidoc" / "tokens.json")
+        )
+        self.aidoc_projects: list[str] = [
+            p.strip() for p in os.getenv(
+                "AIDOC_PROJECTS", "orchestra-room,conversation-tree-ai,nodi,home-server"
+            ).split(",") if p.strip()
+        ]
+        self.aidoc_max_bytes: int = int(os.getenv("AIDOC_MAX_BYTES", str(1024 * 1024)))
+
     # ── 저장소 경로 헬퍼 ──
     @property
     def common_root(self) -> Path:
