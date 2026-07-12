@@ -141,6 +141,27 @@ def test_service_list_search():
     assert "nodi" in service.list_projects(s)
 
 
+def test_search_special_chars_safe():
+    """FTS5 특수문자/예약어/불균형 따옴표가 예외 없이 안전하게 처리되는지."""
+    from backend.config import Settings
+    from backend.aidoc import db, paths, service
+    from backend.aidoc.schemas import CreateDoc
+    s = Settings(); db.init_db(s); paths.ensure_layout(s)
+    a = service.Actor("t")
+    service.create(s, a, CreateDoc(title="검색 안전성 문서", content="colon quote paren test",
+                                   project="nodi"))
+    dangerous = ['project:home "unclosed AND', 'a AND b OR NOT c', 'C++', '"', '-foo',
+                 '*', 'x:y', '()', 'NEAR(a b)', '\\', "''", 'a"b']
+    for q in dangerous:
+        res = service.search(s, q)
+        assert isinstance(res, list)  # 어떤 입력에도 크래시 없음
+    assert service.search(s, "") == []       # 빈 쿼리
+    assert service.search(s, "   ") == []     # 공백만
+    # 정상 토큰은 여전히 매칭(본문 색인)
+    hits = service.search(s, "colon")
+    assert any(h["title"] == "검색 안전성 문서" for h in hits)
+
+
 def test_append_concurrent_no_loss():
     """동시 append가 스냅샷 경쟁으로 쓰기를 잃지 않는지(임계구역 내 재계산 + 재시도)."""
     import threading
@@ -282,6 +303,9 @@ def test_routers_web_and_token():
     assert "nodi" in c.get("/api/aidoc/projects").json()
     assert isinstance(c.get("/api/aidoc/audit-logs").json(), list)
     assert c.get(f"/api/aidoc/documents/{did}/history").status_code == 200
+    # 웹 검색이 특수문자 입력에도 500이 아니라 200(빈/결과 리스트)
+    r = c.get("/api/aidoc/documents/search", params={"q": 'a:b "c AND'})
+    assert r.status_code == 200 and isinstance(r.json(), list)
 
     # 토큰(AI) 경로 — 헤더 인증
     h = {"Authorization": f"Bearer {raw}"}
@@ -538,6 +562,7 @@ if __name__ == "__main__":
     test_schemas()
     test_service_create_get()
     test_service_update_conflict_and_append()
+    test_search_special_chars_safe()
     test_append_concurrent_no_loss()
     test_service_move_trash_restore()
     test_service_list_search()

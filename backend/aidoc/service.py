@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -332,28 +333,49 @@ def _snippet(text: str, q: str, width=80) -> str:
     return ("…" if start > 0 else "") + seg + ("…" if start + width < len(text) else "")
 
 
+def _fts_query(q: str) -> str:
+    """사용자 입력을 안전한 FTS5 식으로 변환.
+
+    각 토큰을 큰따옴표로 감싸고 내부 따옴표는 이스케이프(`""`)한다. 이렇게 하면
+    `:`(컬럼필터), `AND/OR/NOT`(예약어), `*`, `-`, `(`, 불균형 따옴표 등 어떤 입력도
+    구문 오류 없이 리터럴 토큰으로 안전하게 검색된다(FTS5 인젝션/크래시 방지).
+    """
+    import re
+    tokens = [t for t in re.split(r"\s+", (q or "").strip()) if t]
+    return " ".join('"' + t.replace('"', '""') + '"' for t in tokens)
+
+
+def _like_search(conn, q: str, limit: int) -> list[dict]:
+    ql = f"%{(q or '').lower()}%"
+    cur = conn.execute(
+        "SELECT * FROM documents WHERE trashed=0 AND lower(title) LIKE ? "
+        "ORDER BY updated_at DESC LIMIT ?",
+        (ql, int(limit)),
+    )
+    out = []
+    for r in cur.fetchall():
+        m = _row_to_meta(r); m["snippet"] = _snippet(r["title"], q); out.append(m)
+    return out
+
+
 def search(settings, q: str, limit: int = 50) -> list[dict]:
+    if not (q and q.strip()):
+        return []
     conn = db.connect(settings)
     try:
-        hits = []
-        if db.has_fts5(conn):
-            cur = conn.execute(
-                "SELECT d.*, snippet(documents_fts,2,'[',']','…',12) AS snip "
-                "FROM documents_fts f JOIN documents d ON d.id=f.doc_id "
-                "WHERE documents_fts MATCH ? AND d.trashed=0 LIMIT ?",
-                (q, int(limit)),
-            )
-            for r in cur.fetchall():
-                m = _row_to_meta(r); m["snippet"] = r["snip"] or ""; hits.append(m)
-        else:
-            ql = f"%{q.lower()}%"
-            cur = conn.execute(
-                "SELECT * FROM documents WHERE trashed=0 AND (lower(title) LIKE ?) LIMIT ?",
-                (ql, int(limit)),
-            )
-            for r in cur.fetchall():
-                m = _row_to_meta(r); m["snippet"] = _snippet(r["title"], q); hits.append(m)
-        return hits
+        fq = _fts_query(q)
+        if db.has_fts5(conn) and fq:
+            try:
+                cur = conn.execute(
+                    "SELECT d.*, snippet(documents_fts,2,'[',']','…',12) AS snip "
+                    "FROM documents_fts f JOIN documents d ON d.id=f.doc_id "
+                    "WHERE documents_fts MATCH ? AND d.trashed=0 LIMIT ?",
+                    (fq, int(limit)),
+                )
+                return [dict(_row_to_meta(r), snippet=r["snip"] or "") for r in cur.fetchall()]
+            except sqlite3.OperationalError:
+                pass  # 예기치 못한 FTS 파싱 실패 → LIKE 폴백(방어적)
+        return _like_search(conn, q, limit)
     finally:
         conn.close()
 
