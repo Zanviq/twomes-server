@@ -20,6 +20,15 @@ class CreateFolder(BaseModel):
     path: str  # 하위 폴더 경로(예: "설계/초안")
 
 
+class RememberBody(BaseModel):
+    scope: str  # 'global' 또는 프로젝트명
+    type: str   # preference|mistake|decision|feature
+    title: str
+    content: str = ""
+    feature_key: str | None = None
+    change_note: str = ""
+
+
 class UpdateDoc(BaseModel):
     expected_version: int
     title: str | None = None

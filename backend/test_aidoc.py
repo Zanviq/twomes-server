@@ -227,6 +227,45 @@ def test_semantic_search_ranking():
     assert isinstance(service.semantic_search(s, "gpu", limit=5), list)
 
 
+def test_hermes_memory():
+    """메모리: feature_key 업서트(같은 문서 새 버전) + recall(요약/full) + 일반문서 격리."""
+    from backend.config import Settings
+    from backend.aidoc import db, paths, service, memory, embeddings
+    from backend.aidoc.schemas import CreateDoc
+    s = Settings(); db.init_db(s); paths.ensure_layout(s)
+    a = service.Actor("claude-code")
+    # 업서트: 같은 feature_key → 같은 문서, 새 버전(진화)
+    m1 = memory.remember(s, a, "global", "preference", "색상 선호", "AI가 파랑을 씀",
+                         feature_key="ui-accent", change_note="초기")
+    assert m1["scope"] == "global" and m1["version"] == 1 and m1["mem_type"] == "preference"
+    m2 = memory.remember(s, a, "global", "preference", "색상 선호", "사용자가 퍼플을 원함 → 퍼플",
+                         feature_key="ui-accent", change_note="AI 파랑 → 사용자 퍼플")
+    assert m2["id"] == m1["id"] and m2["version"] == 2 and "퍼플" in m2["content"]
+    assert m2["last_change"] and "퍼플" in m2["last_change"]
+    assert len([x for x in memory.list_memories(s, scope="global") if x["feature_key"] == "ui-accent"]) == 1
+    # 격리: 메모리는 일반 문서 list/search에 안 나옴
+    service.create(s, a, CreateDoc(title="색상 노트", content="색상 노트 본문", project="nodi"))
+    assert all(d["title"] != "색상 선호" for d in service.list_docs(s))
+    assert all(h["title"] != "색상 선호" for h in service.search(s, "색상"))
+    # recall (가짜 임베더 활성화 후 기록해야 벡터 저장)
+    orig = embeddings.embed_text
+    embeddings.embed_text = lambda st, t, task_type=None: [
+        float("퍼플" in (t or "") or "색상" in (t or "") or "강조" in (t or "")),
+        float("잠금" in (t or "")),
+    ]
+    try:
+        memory.remember(s, a, "global", "preference", "색상 선호", "퍼플 강조색",
+                        feature_key="ui-accent", change_note="재색인")
+        memory.remember(s, a, "nodi", "mistake", "잠금 실수", "잠금 손실 방지",
+                        feature_key="lock", change_note="")
+        hits = memory.recall(s, "강조 색상 뭐였지", project="nodi", limit=3)
+        assert hits and hits[0]["feature_key"] == "ui-accent"
+        assert "summary" in hits[0] and "content" not in hits[0]  # 기본 요약
+        assert "content" in memory.recall(s, "색상", project="nodi", limit=1, full=True)[0]
+    finally:
+        embeddings.embed_text = orig
+
+
 def test_export_folder():
     """폴더 내용물(안의 파일들)을 상대경로+본문으로 반환. 폴더 밖/하위 처리."""
     from backend.config import Settings
@@ -539,9 +578,10 @@ def test_mcp_handshake_and_tools():
                              "params": {"protocolVersion": "2025-06-18", "capabilities": {}}}, headers=h)
     assert r.status_code == 200
     body = r.json()
-    assert body["result"]["serverInfo"]["name"] == "aidoc"
+    assert body["result"]["serverInfo"]["name"] == "hermes"
     assert body["result"]["protocolVersion"] == "2025-06-18"
     assert "tools" in body["result"]["capabilities"]
+    assert "recall" in body["result"].get("instructions", "").lower() or "recall" in body["result"].get("instructions", "")
     # notifications/initialized → 202, 본문 없음
     n = c.post("/mcp", json={"jsonrpc": "2.0", "method": "notifications/initialized"}, headers=h)
     assert n.status_code == 202
@@ -550,10 +590,42 @@ def test_mcp_handshake_and_tools():
     names = {t["name"] for t in tl["result"]["tools"]}
     assert "create_document" in names and "search_documents" in names
     assert "semantic_search" in names and "reindex" in names and "export_folder" in names
-    assert len(tl["result"]["tools"]) == 14
+    assert {"recall", "remember", "list_memories"} <= names
+    assert len(tl["result"]["tools"]) == 17
     # 알 수 없는 메서드 → -32601
     err = c.post("/mcp", json={"jsonrpc": "2.0", "id": 3, "method": "no/such"}, headers=h).json()
     assert err["error"]["code"] == -32601
+
+
+def test_memory_mcp_and_authz():
+    """MCP 메모리 도구: global은 스코프 토큰도 쓰기 허용, 타 프로젝트 메모리는 거부."""
+    import hashlib, json, os
+    from fastapi.testclient import TestClient
+    from backend.config import Settings
+    from backend.aidoc import db, paths, tokens
+    from backend.main import app
+    s = Settings(); db.init_db(s); paths.ensure_layout(s)
+    raw = "mem-tok-1"
+    os.makedirs(os.path.dirname(s.aidoc_tokens_file), exist_ok=True)
+    json.dump([{"name": "nodi-tok", "token_sha256": hashlib.sha256(raw.encode()).hexdigest(),
+                "actor": "codex", "scopes": ["documents:read", "documents:create"],
+                "allowed_projects": ["nodi"]}], open(s.aidoc_tokens_file, "w"))
+    tokens.reload_cache()
+    c = TestClient(app); h = {"Authorization": f"Bearer {raw}"}
+
+    def call(nm, args):
+        return c.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                                    "params": {"name": nm, "arguments": args}}, headers=h).json()["result"]
+
+    assert call("remember", {"scope": "global", "type": "preference", "title": "G",
+                             "content": "글로벌 선호", "feature_key": "g1"})["isError"] is False
+    assert call("remember", {"scope": "nodi", "type": "decision", "title": "N",
+                             "content": "노디 결정", "feature_key": "n1"})["isError"] is False
+    # 타 프로젝트 메모리 쓰기 → 거부
+    assert call("remember", {"scope": "orchestra-room", "type": "decision",
+                             "title": "X", "content": "x"})["isError"] is True
+    assert call("recall", {"query": "선호", "project": "nodi"})["isError"] is False
+    assert call("list_memories", {})["isError"] is False
 
 
 def test_mcp_tools_call_roundtrip():
@@ -709,6 +781,7 @@ if __name__ == "__main__":
     test_search_special_chars_safe()
     test_embeddings_math()
     test_semantic_search_ranking()
+    test_hermes_memory()
     test_export_folder()
     test_reindex_scoped()
     test_aidoc_folders()
@@ -721,6 +794,7 @@ if __name__ == "__main__":
     test_token_project_isolation()
     test_mcp_handshake_and_tools()
     test_mcp_tools_call_roundtrip()
+    test_memory_mcp_and_authz()
     test_cf_access_verify()
     test_cf_access_router_enforced()
     print("ALL AIDOC TESTS PASSED")

@@ -44,3 +44,10 @@ def allowed_projects(p: Principal, all_projects: list[str]) -> list[str]:
     if "*" in p.allowed_projects:
         return all_projects
     return [pr for pr in all_projects if pr in p.allowed_projects]
+
+
+def need_memory(p: Principal, scope: str) -> None:
+    """메모리 접근: 'global'은 전 토큰 허용, 프로젝트 메모리는 그 프로젝트 접근권 필요."""
+    if scope == "global":
+        return
+    need_resource(p, scope)

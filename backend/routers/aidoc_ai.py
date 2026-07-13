@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query
 
 from ..config import Settings, get_settings
 from ..aidoc import authz, cf_access, service, tokens
-from ..aidoc.schemas import AppendDoc, CreateDoc, MoveDoc, RestoreDoc, UpdateDoc
+from ..aidoc.schemas import AppendDoc, CreateDoc, MoveDoc, RememberBody, RestoreDoc, UpdateDoc
 from ..aidoc.tokens import Principal
 from ._aidoc_util import mapped as _mapped
 
@@ -177,4 +177,47 @@ def reindex(p: Principal = Depends(require_principal), settings: Settings = Depe
         authz.need_scope(p, "documents:update")
         scope = None if "*" in p.allowed_projects else list(p.allowed_projects)
         return embeddings.reindex(settings, projects=scope)
+    return _mapped(op)
+
+
+# ── Hermes 메모리 ──
+@router.get("/memory/recall")
+def recall(q: str = Query(...), project: str = Query(None), limit: int = Query(8),
+           full: bool = Query(False), p: Principal = Depends(require_principal),
+           settings: Settings = Depends(get_settings)):
+    from ..aidoc import memory
+
+    def op():
+        authz.need_scope(p, "documents:read")
+        if project:
+            authz.need_memory(p, project)
+        return memory.recall(settings, q, project=project or None, limit=limit, full=full)
+    return _mapped(op)
+
+
+@router.get("/memory")
+def list_memories(scope: str = Query(None), type: str = Query(None),
+                  p: Principal = Depends(require_principal),
+                  settings: Settings = Depends(get_settings)):
+    from ..aidoc import memory
+
+    def op():
+        authz.need_scope(p, "documents:read")
+        if scope:
+            authz.need_memory(p, scope)
+        return memory.list_memories(settings, scope=scope, mem_type=type)
+    return _mapped(op)
+
+
+@router.post("/memory")
+def remember(body: RememberBody, p: Principal = Depends(require_principal),
+             settings: Settings = Depends(get_settings)):
+    from ..aidoc import memory
+
+    def op():
+        authz.need_scope(p, "documents:create")
+        authz.need_memory(p, body.scope)
+        return memory.remember(settings, service.Actor(p.actor), body.scope, body.type,
+                               body.title, body.content, feature_key=body.feature_key,
+                               change_note=body.change_note)
     return _mapped(op)

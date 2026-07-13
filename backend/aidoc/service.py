@@ -318,7 +318,7 @@ def restore(settings, actor: Actor, doc_id: str, version=None) -> dict:
 
 def list_docs(settings, *, project=None, category=None, tag=None, status=None,
               created_by=None, updated_by=None, include_trashed=False) -> list[dict]:
-    where = []; vals = []
+    where = ["mem_type IS NULL"]; vals = []  # 일반 문서만(메모리 제외)
     if not include_trashed:
         where.append("trashed=0")
     for col, v in (("project", project), ("category", category), ("status", status),
@@ -364,7 +364,7 @@ def _fts_query(q: str) -> str:
 def _like_search(conn, q: str, limit: int) -> list[dict]:
     ql = f"%{(q or '').lower()}%"
     cur = conn.execute(
-        "SELECT * FROM documents WHERE trashed=0 AND lower(title) LIKE ? "
+        "SELECT * FROM documents WHERE trashed=0 AND mem_type IS NULL AND lower(title) LIKE ? "
         "ORDER BY updated_at DESC LIMIT ?",
         (ql, int(limit)),
     )
@@ -385,7 +385,7 @@ def search(settings, q: str, limit: int = 50) -> list[dict]:
                 cur = conn.execute(
                     "SELECT d.*, snippet(documents_fts,2,'[',']','…',12) AS snip "
                     "FROM documents_fts f JOIN documents d ON d.id=f.doc_id "
-                    "WHERE documents_fts MATCH ? AND d.trashed=0 LIMIT ?",
+                    "WHERE documents_fts MATCH ? AND d.trashed=0 AND d.mem_type IS NULL LIMIT ?",
                     (fq, int(limit)),
                 )
                 return [dict(_row_to_meta(r), snippet=r["snip"] or "") for r in cur.fetchall()]
@@ -410,7 +410,7 @@ def semantic_search(settings, query: str, *, project=None, limit: int = 10) -> l
     qn = embeddings.normalize(qvec)
     scored = sorted(
         ((embeddings.dot(qn, vec), doc_id)
-         for doc_id, vec in embeddings.load_vectors(settings, project=project)),
+         for doc_id, vec in embeddings.load_vectors(settings, project=project, memory=False)),
         reverse=True,
     )[: max(1, int(limit))]
     if not scored:
@@ -470,7 +470,7 @@ def export_folder(settings, project=None, folder=None, recursive=True) -> list[d
     conn = db.connect(settings)
     try:
         rows = conn.execute(
-            "SELECT id,title,storage_path,project FROM documents WHERE trashed=0"
+            "SELECT id,title,storage_path,project FROM documents WHERE trashed=0 AND mem_type IS NULL"
         ).fetchall()
     finally:
         conn.close()

@@ -7,7 +7,7 @@ from ..config import Settings
 from ..security_paths import safe_join
 from .errors import BadRequest
 
-TOP_FOLDERS = ("inbox", "projects", "knowledge", "templates", "archive", "trash", ".history")
+TOP_FOLDERS = ("inbox", "projects", "knowledge", "templates", "archive", "trash", "memory", ".history")
 
 
 def ensure_layout(settings: Settings) -> None:
@@ -17,6 +17,10 @@ def ensure_layout(settings: Settings) -> None:
         (root / f).mkdir(parents=True, exist_ok=True)
     for p in settings.aidoc_projects:
         (root / "projects" / p).mkdir(parents=True, exist_ok=True)
+    # Hermes 메모리: global + 프로젝트별
+    (root / "memory" / "global").mkdir(parents=True, exist_ok=True)
+    for p in settings.aidoc_projects:
+        (root / "memory" / "projects" / p).mkdir(parents=True, exist_ok=True)
 
 
 def resolve_rel(settings: Settings, rel: str) -> Path:

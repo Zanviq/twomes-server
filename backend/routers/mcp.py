@@ -101,6 +101,7 @@ def _handle_one(settings: Settings, principal: Principal, msg) -> dict | None:
             "protocolVersion": client_proto,
             "capabilities": {"tools": {"listChanged": False}},
             "serverInfo": {"name": mcp_server.SERVER_NAME, "version": mcp_server.SERVER_VERSION},
+            "instructions": mcp_server.SERVER_INSTRUCTIONS,
         })
 
     if method == "ping":

@@ -14,7 +14,7 @@ def build_graph(settings: Settings, *, project=None, threshold=None, max_edges=N
 
     conn = db.connect(settings)
     try:
-        where = ["trashed=0"]; vals: list = []
+        where = ["trashed=0", "mem_type IS NULL"]; vals: list = []  # 메모리 제외
         if project:
             where.append("project=?"); vals.append(project)
         rows = conn.execute(
@@ -32,7 +32,7 @@ def build_graph(settings: Settings, *, project=None, threshold=None, max_edges=N
     links: list[dict] = []
 
     # ── 임베딩 유사도 엣지(무방향, 노드당 상위 max_edges·threshold 이상) ──
-    vecs = dict(embeddings.load_vectors(settings, project=project))
+    vecs = dict(embeddings.load_vectors(settings, project=project, memory=False))
     ids = list(vecs.keys())
     seen_sim: set = set()
     for a in ids:

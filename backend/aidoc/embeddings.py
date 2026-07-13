@@ -99,12 +99,20 @@ def index_document(settings: Settings, doc_id: str, title: str, content: str,
         return False
 
 
-def load_vectors(settings: Settings, *, project=None, include_trashed=False) -> list[tuple[str, list[float]]]:
-    """(doc_id, 정규화벡터) 목록. documents와 JOIN해 프로젝트/휴지통 필터."""
+def load_vectors(settings: Settings, *, project=None, include_trashed=False,
+                 memory=None) -> list[tuple[str, list[float]]]:
+    """(doc_id, 정규화벡터) 목록. documents와 JOIN해 프로젝트/휴지통/메모리 필터.
+
+    memory: None=전체, False=일반 문서만(mem_type IS NULL), True=메모리만.
+    """
     where = ["e.dim > 0"]
     vals: list = []
     if not include_trashed:
         where.append("d.trashed=0")
+    if memory is True:
+        where.append("d.mem_type IS NOT NULL")
+    elif memory is False:
+        where.append("d.mem_type IS NULL")
     if project is not None:
         where.append("d.project=?"); vals.append(project)
     sql = ("SELECT e.doc_id AS doc_id, e.vector AS vector FROM document_embeddings e "

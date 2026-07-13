@@ -21,7 +21,9 @@ CREATE TABLE IF NOT EXISTS documents (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   trashed INTEGER NOT NULL DEFAULT 0,
-  orig_path TEXT
+  orig_path TEXT,
+  mem_type TEXT,
+  feature_key TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_documents_project ON documents(project);
 CREATE INDEX IF NOT EXISTS ix_documents_status ON documents(status);
@@ -89,10 +91,21 @@ def has_fts5(conn: sqlite3.Connection) -> bool:
         return False
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    """기존 DB에 누락 컬럼/인덱스 추가(멱등). CREATE TABLE IF NOT EXISTS는 ALTER를 안 하므로."""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(documents)")}
+    if "mem_type" not in cols:
+        conn.execute("ALTER TABLE documents ADD COLUMN mem_type TEXT")
+    if "feature_key" not in cols:
+        conn.execute("ALTER TABLE documents ADD COLUMN feature_key TEXT")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_documents_feature ON documents(project, feature_key)")
+
+
 def init_db(settings: Settings) -> None:
     conn = connect(settings)
     try:
         conn.executescript(_SCHEMA)
+        _migrate(conn)
         if has_fts5(conn):
             conn.executescript(_FTS)
         conn.commit()

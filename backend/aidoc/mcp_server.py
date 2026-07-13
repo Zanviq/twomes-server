@@ -10,9 +10,15 @@ from .errors import BadRequest
 from .schemas import AppendDoc, CreateDoc, MoveDoc, RestoreDoc, UpdateDoc
 from .tokens import Principal
 
-SERVER_NAME = "aidoc"
-SERVER_VERSION = "1.0.0"
+SERVER_NAME = "hermes"
+SERVER_VERSION = "1.1.0"
 DEFAULT_PROTOCOL = "2025-06-18"
+SERVER_INSTRUCTIONS = (
+    "Hermes MCP — 홈서버 AI 문서 관리 + 교차 세션 메모리. "
+    "작업을 시작하기 전에 recall로 이 주제의 과거 결정·사용자 의도·실수를 확인하라. "
+    "사용자가 AI 결과물을 정정하면 remember로 기록하되, 같은 기능은 feature_key로 같은 문서에 "
+    "누적(change_note에 'AI안 → 사용자 의도')하라. 문서는 create/update/search/semantic_search로 관리한다."
+)
 
 _STR = {"type": "string"}
 
@@ -85,6 +91,27 @@ TOOLS = [
            "folder": {"type": "string", "description": "프로젝트 하위 폴더(선택). 미지정=전체"},
            "recursive": {"type": "boolean", "description": "하위 폴더까지 포함(기본 true)"}},
           []),
+    # ── Hermes 메모리 ──
+    _tool("recall",
+          "과거 결정·사용자 의도·실수를 의미검색으로 회상한다(작업 전 확인용). "
+          "global(교차 프로젝트)은 항상 포함, project 지정 시 그 프로젝트 메모리도. "
+          "full=true면 본문 전체, 기본은 요약.",
+          {"query": _STR,
+           "project": {"type": "string", "description": "현재 프로젝트(선택)"},
+           "limit": {"type": "integer", "description": "최대 결과(기본 8)"},
+           "full": {"type": "boolean", "description": "본문 전체(기본 false=요약)"}},
+          ["query"]),
+    _tool("remember",
+          "지속 지식을 기록한다. feature_key 지정 시 같은 기능은 같은 문서에 누적(새 버전). "
+          "사용자 정정 후엔 change_note에 'AI안 → 사용자 의도'를 남겨라. scope=global 또는 프로젝트명.",
+          {"scope": {"type": "string", "description": "'global' 또는 프로젝트명"},
+           "type": {"type": "string", "description": "preference|mistake|decision|feature"},
+           "title": _STR, "content": _STR,
+           "feature_key": {"type": "string", "description": "같은 기능 누적 키(선택)"},
+           "change_note": {"type": "string", "description": "이번 변경 요약(AI안 → 사용자 의도)"}},
+          ["scope", "type", "title", "content"]),
+    _tool("list_memories", "메모리 목록(간결 메타). scope/type로 필터.",
+          {"scope": {"type": "string"}, "type": {"type": "string"}}, []),
 ]
 
 _TOOL_NAMES = {t["name"] for t in TOOLS}
@@ -203,6 +230,33 @@ def call_tool(settings, p: Principal, name: str, args: dict):
         authz.need_resource(p, project)  # project 접근권(inbox=None은 '*'만)
         return service.export_folder(settings, project=project, folder=args.get("folder"),
                                      recursive=args.get("recursive", True))
+
+    if name == "recall":
+        from . import memory
+        authz.need_scope(p, "documents:read")
+        project = args.get("project")
+        if project:
+            authz.need_memory(p, project)
+        return memory.recall(settings, _require(args, "query"), project=project or None,
+                             limit=int(args.get("limit") or 8), full=bool(args.get("full")))
+
+    if name == "remember":
+        from . import memory
+        authz.need_scope(p, "documents:create")
+        scope = _require(args, "scope")
+        authz.need_memory(p, scope)
+        return memory.remember(settings, service.Actor(p.actor), scope, _require(args, "type"),
+                               _require(args, "title"), args.get("content", ""),
+                               feature_key=args.get("feature_key"),
+                               change_note=args.get("change_note", ""))
+
+    if name == "list_memories":
+        from . import memory
+        authz.need_scope(p, "documents:read")
+        scope = args.get("scope")
+        if scope:
+            authz.need_memory(p, scope)
+        return memory.list_memories(settings, scope=scope, mem_type=args.get("type"))
 
     raise BadRequest(f"알 수 없는 도구: {name}")
 
