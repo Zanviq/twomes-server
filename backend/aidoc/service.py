@@ -404,7 +404,7 @@ def semantic_search(settings, query: str, *, project=None, limit: int = 10) -> l
     """
     if not (query and query.strip()):
         return []
-    qvec = embeddings.embed_text(settings, query)
+    qvec = embeddings.embed_text(settings, query, task_type="RETRIEVAL_QUERY")
     if not qvec:
         return search(settings, query, limit)  # 임베딩 불가 → FTS 폴백
     qn = embeddings.normalize(qvec)

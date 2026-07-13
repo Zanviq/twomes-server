@@ -39,8 +39,11 @@ def dot(a: list[float], b: list[float]) -> float:
 
 
 # ── Gemini 임베딩 ──
-def embed_text(settings: Settings, text: str) -> list[float] | None:
-    """텍스트 임베딩(정규화 전 원본). 키/SDK 없거나 실패 시 None."""
+def embed_text(settings: Settings, text: str, task_type: str | None = None) -> list[float] | None:
+    """텍스트 임베딩(정규화 전 원본). 키/SDK 없거나 실패 시 None.
+
+    task_type: 검색 품질을 위해 문서는 'RETRIEVAL_DOCUMENT', 질의는 'RETRIEVAL_QUERY'.
+    """
     if not settings.gemini_api_key or not (text and text.strip()):
         return None
     try:
@@ -53,7 +56,8 @@ def embed_text(settings: Settings, text: str) -> list[float] | None:
         resp = client.models.embed_content(
             model=settings.aidoc_embed_model,
             contents=text[: settings.aidoc_embed_max_chars],
-            config=types.EmbedContentConfig(output_dimensionality=settings.aidoc_embed_dim),
+            config=types.EmbedContentConfig(
+                output_dimensionality=settings.aidoc_embed_dim, task_type=task_type),
         )
         embs = getattr(resp, "embeddings", None)
         if not embs:
@@ -71,7 +75,7 @@ def index_document(settings: Settings, doc_id: str, title: str, content: str,
     """문서 임베딩을 계산해 upsert. best-effort — 실패해도 예외를 전파하지 않음."""
     try:
         text = f"{title}\n\n{content}" if title else content
-        vec = embed_text(settings, text)
+        vec = embed_text(settings, text, task_type="RETRIEVAL_DOCUMENT")
         if not vec:
             return False
         nvec = normalize(vec)

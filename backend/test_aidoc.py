@@ -211,7 +211,7 @@ def test_semantic_search_ranking():
     a = service.Actor("t")
     vocab = ("gpu", "cuda", "database", "sql")
     orig = embeddings.embed_text
-    embeddings.embed_text = lambda st, t: [float((t or "").lower().count(w)) for w in vocab]
+    embeddings.embed_text = lambda st, t, task_type=None: [float((t or "").lower().count(w)) for w in vocab]
     try:
         d1 = service.create(s, a, CreateDoc(title="GPU 커널", content="gpu cuda kernel tuning", project="nodi"))
         d2 = service.create(s, a, CreateDoc(title="DB 인덱스", content="database sql index", project="nodi"))
@@ -264,7 +264,7 @@ def test_aidoc_graph():
     a = service.Actor("t")
     vocab = ("alpha", "beta", "gamma")
     orig = embeddings.embed_text
-    embeddings.embed_text = lambda st, t: [float((t or "").lower().count(w)) for w in vocab]
+    embeddings.embed_text = lambda st, t, task_type=None: [float((t or "").lower().count(w)) for w in vocab]
     try:
         g1 = service.create(s, a, CreateDoc(title="GraphAlpha", content="alpha alpha alpha", project="nodi"))
         service.create(s, a, CreateDoc(title="GraphAlpha2", content="alpha alpha", project="nodi"))
