@@ -129,8 +129,10 @@ class Settings:
         self.aidoc_embed_model: str = os.getenv("AIDOC_EMBED_MODEL", "gemini-embedding-001")
         self.aidoc_embed_dim: int = int(os.getenv("AIDOC_EMBED_DIM", "768"))
         self.aidoc_embed_max_chars: int = int(os.getenv("AIDOC_EMBED_MAX_CHARS", "8000"))
-        self.aidoc_graph_edge_threshold: float = float(os.getenv("AIDOC_GRAPH_EDGE_THRESHOLD", "0.75"))
-        self.aidoc_graph_max_edges: int = int(os.getenv("AIDOC_GRAPH_MAX_EDGES", "4"))
+        # gemini-embedding-001은 문서-문서 코사인이 0.65~0.78 좁은 band에 몰려, 절대 임계값이
+        # 높으면 엣지가 거의 안 생긴다. 낮은 floor + 노드당 상위K(kNN)로 최근접만 연결.
+        self.aidoc_graph_edge_threshold: float = float(os.getenv("AIDOC_GRAPH_EDGE_THRESHOLD", "0.62"))
+        self.aidoc_graph_max_edges: int = int(os.getenv("AIDOC_GRAPH_MAX_EDGES", "3"))
 
     # ── 저장소 경로 헬퍼 ──
     @property
