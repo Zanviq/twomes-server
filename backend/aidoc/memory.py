@@ -24,7 +24,8 @@ def _scope_dir(scope: str) -> str:
 def _validate_scope(settings, scope: str) -> None:
     if scope == "global":
         return
-    if scope not in settings.aidoc_projects:
+    from . import projects as _projects
+    if not _projects.is_registered(settings, scope):
         raise BadRequest(f"등록되지 않은 프로젝트: {scope}")
 
 

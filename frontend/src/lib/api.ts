@@ -202,6 +202,12 @@ export const api = {
     req<AidocMeta>(`/api/aidoc/documents/${id}/restore`, jsonInit("POST", { version: version ?? null })),
   aidocHistory: (id: string) => req<AidocVersion[]>(`/api/aidoc/documents/${id}/history`),
   aidocProjects: () => req<string[]>("/api/aidoc/projects"),
+  aidocAddProject: (name: string) =>
+    req<{ name: string }>("/api/aidoc/projects", jsonInit("POST", { name })),
+  aidocRenameProject: (oldName: string, name: string) =>
+    req<{ name: string }>(`/api/aidoc/projects/${encodeURIComponent(oldName)}`, jsonInit("PUT", { name })),
+  aidocDeleteProject: (name: string) =>
+    req<{ deleted: string; trashed: number }>(`/api/aidoc/projects/${encodeURIComponent(name)}`, { method: "DELETE" }),
   aidocAudit: () => req<AidocAuditLog[]>("/api/aidoc/audit-logs"),
   aidocSemantic: (query: string, project?: string, limit = 10) => {
     const p: Record<string, string> = { q: query, limit: String(limit) };

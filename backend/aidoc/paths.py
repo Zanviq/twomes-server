@@ -15,12 +15,9 @@ def ensure_layout(settings: Settings) -> None:
     root.mkdir(parents=True, exist_ok=True)
     for f in TOP_FOLDERS:
         (root / f).mkdir(parents=True, exist_ok=True)
-    for p in settings.aidoc_projects:
-        (root / "projects" / p).mkdir(parents=True, exist_ok=True)
-    # Hermes 메모리: global + 프로젝트별
     (root / "memory" / "global").mkdir(parents=True, exist_ok=True)
-    for p in settings.aidoc_projects:
-        (root / "memory" / "projects" / p).mkdir(parents=True, exist_ok=True)
+    (root / "memory" / "projects").mkdir(parents=True, exist_ok=True)
+    # 프로젝트별 폴더는 projects.ensure_seed(레지스트리)에서 생성한다(동적 목록).
 
 
 def resolve_rel(settings: Settings, rel: str) -> Path:
@@ -36,7 +33,8 @@ def resolve_rel(settings: Settings, rel: str) -> Path:
 def new_doc_dir(settings: Settings, project: str | None) -> str:
     if not project:
         return "inbox"
-    if project not in settings.aidoc_projects:
+    from . import projects  # 지연 임포트(paths↔projects 순환 방지)
+    if not projects.is_registered(settings, project):
         raise BadRequest(f"등록되지 않은 프로젝트: {project}")
     return f"projects/{project}"
 

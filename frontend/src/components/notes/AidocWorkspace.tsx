@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot, FilePlus, Save, Trash2, History, Loader2, Search, X, RotateCcw,
   ScrollText, AlertTriangle, Sparkles, FolderOpen, Folder, FolderPlus, ArrowUpDown,
-  ChevronRight, ChevronDown, Home,
+  ChevronRight, ChevronDown, Home, Plus, Pencil,
 } from "lucide-react";
 import { MarkdownView } from "./MarkdownView";
 import { Modal } from "../ui/Modal";
@@ -39,6 +39,10 @@ export function AidocWorkspace({ openDocId }: { openDocId?: string }) {
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [newProjOpen, setNewProjOpen] = useState(false);
+  const [newProjName, setNewProjName] = useState("");
+  const [manageOpen, setManageOpen] = useState(false); // 이름변경/삭제
+  const [renameProjName, setRenameProjName] = useState("");
   const taRef = useRef<HTMLTextAreaElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const syncingScroll = useRef(false);
@@ -297,6 +301,51 @@ export function AidocWorkspace({ openDocId }: { openDocId?: string }) {
     }
   };
 
+  const reloadProjects = () => api.aidocProjects().then(setProjects).catch(() => {});
+
+  const addProject = async () => {
+    const name = newProjName.trim();
+    if (!name) return;
+    setNewProjOpen(false);
+    setNewProjName("");
+    try {
+      const r = await api.aidocAddProject(name);
+      await reloadProjects();
+      setProjectFilter(r.name);
+      toast.ok("프로젝트 생성됨");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "프로젝트 생성 실패");
+    }
+  };
+
+  const renameProject = async () => {
+    const name = renameProjName.trim();
+    if (!name || name === projectFilter) { setManageOpen(false); return; }
+    setManageOpen(false);
+    try {
+      const r = await api.aidocRenameProject(projectFilter, name);
+      await reloadProjects();
+      setProjectFilter(r.name);
+      reload();
+      toast.ok("이름 변경됨");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "이름 변경 실패");
+    }
+  };
+
+  const deleteProject = async () => {
+    setManageOpen(false);
+    try {
+      const r = await api.aidocDeleteProject(projectFilter);
+      await reloadProjects();
+      setProjectFilter("");
+      reload();
+      toast.ok(`프로젝트 삭제됨 (문서 ${r.trashed}개 휴지통으로)`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "삭제 실패");
+    }
+  };
+
   const createFolder = async () => {
     const name = newFolderName.trim();
     if (!name) return;
@@ -429,6 +478,18 @@ export function AidocWorkspace({ openDocId }: { openDocId?: string }) {
             <option value={INBOX}>미분류(inbox)</option>
             {projects.map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
+          {projectFilter && projectFilter !== INBOX && (
+            <button onClick={() => { setRenameProjName(projectFilter); setManageOpen(true); }}
+              title="프로젝트 이름 변경/삭제" aria-label="프로젝트 관리"
+              className="shrink-0 rounded-md border border-line p-1.5 text-fg-muted hover:text-accent">
+              <Pencil size={13} />
+            </button>
+          )}
+          <button onClick={() => { setNewProjName(""); setNewProjOpen(true); }}
+            title="새 프로젝트" aria-label="새 프로젝트"
+            className="shrink-0 rounded-md border border-line p-1.5 text-fg-muted hover:text-accent">
+            <Plus size={13} />
+          </button>
           <button
             onClick={() => setShowTrash((v) => !v)}
             title="휴지통 보기"
@@ -642,6 +703,44 @@ export function AidocWorkspace({ openDocId }: { openDocId?: string }) {
             <button onClick={() => setNewFolderOpen(false)} className="btn btn-ghost">취소</button>
             <button onClick={createFolder} className="btn btn-primary">만들기</button>
           </div>
+        </div>
+      </Modal>
+
+      {/* 새 프로젝트 */}
+      <Modal open={newProjOpen} onClose={() => setNewProjOpen(false)} title="새 프로젝트" width="max-w-sm">
+        <div className="space-y-3">
+          <input autoFocus className="input" value={newProjName} placeholder="프로젝트 이름(영문/숫자/한글)"
+            onChange={(e) => setNewProjName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") addProject(); if (e.key === "Escape") setNewProjOpen(false); }} />
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setNewProjOpen(false)} className="btn btn-ghost">취소</button>
+            <button onClick={addProject} className="btn btn-primary">만들기</button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* 프로젝트 이름 변경 / 삭제 */}
+      <Modal open={manageOpen} onClose={() => setManageOpen(false)} title={`프로젝트 · ${projectFilter}`} width="max-w-sm">
+        <div className="space-y-4">
+          <label className="block">
+            <span className="label">이름 변경</span>
+            <input className="input mt-1" value={renameProjName}
+              onChange={(e) => setRenameProjName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") renameProject(); }} />
+          </label>
+          <p className="text-[11.5px] text-fg-muted">
+            문서·폴더·메모리가 함께 이동합니다. 특정 프로젝트로 스코프된 토큰이 있다면 그 이름은 수동으로 바꿔야 합니다.
+          </p>
+          <div className="flex items-center justify-between gap-2">
+            <button onClick={deleteProject} className="btn btn-danger">
+              <Trash2 size={14} /> 프로젝트 삭제
+            </button>
+            <div className="flex gap-2">
+              <button onClick={() => setManageOpen(false)} className="btn btn-ghost">취소</button>
+              <button onClick={renameProject} className="btn btn-primary">이름 변경</button>
+            </div>
+          </div>
+          <p className="text-[11px] text-fg-subtle">삭제 시 이 프로젝트의 모든 문서가 휴지통으로 이동합니다(영구삭제 아님).</p>
         </div>
       </Modal>
 

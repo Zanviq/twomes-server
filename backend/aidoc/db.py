@@ -63,6 +63,11 @@ CREATE TABLE IF NOT EXISTS document_embeddings (
   content_hash TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS projects (
+  name TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL
+);
 """
 
 _FTS = """
@@ -108,6 +113,12 @@ def init_db(settings: Settings) -> None:
         _migrate(conn)
         if has_fts5(conn):
             conn.executescript(_FTS)
+        # 프로젝트 레지스트리 최초 시드(env AIDOC_PROJECTS). 테이블이 비어 있을 때만.
+        if conn.execute("SELECT COUNT(*) AS c FROM projects").fetchone()["c"] == 0:
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+            for p in settings.aidoc_projects:
+                conn.execute("INSERT OR IGNORE INTO projects(name,created_at) VALUES (?,?)", (p, now))
         conn.commit()
     finally:
         conn.close()

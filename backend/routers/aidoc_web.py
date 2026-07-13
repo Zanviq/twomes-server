@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from ..auth import SessionUser, require_session
 from ..config import Settings, get_settings
 from ..aidoc import service
-from ..aidoc.schemas import AppendDoc, CreateDoc, CreateFolder, MoveDoc, RestoreDoc, UpdateDoc
+from ..aidoc.schemas import AppendDoc, CreateDoc, CreateFolder, MoveDoc, ProjectBody, RestoreDoc, UpdateDoc
 from ._aidoc_util import mapped as _mapped
 
 router = APIRouter(prefix="/api/aidoc", tags=["aidoc-web"])
@@ -102,6 +102,27 @@ def history(doc_id: str, user: SessionUser = Depends(require_session),
 @router.get("/projects")
 def projects(user: SessionUser = Depends(require_session), settings: Settings = Depends(get_settings)):
     return service.list_projects(settings)
+
+
+@router.post("/projects")
+def add_project(body: ProjectBody, user: SessionUser = Depends(require_session),
+                settings: Settings = Depends(get_settings)):
+    from ..aidoc import projects as pj
+    return _mapped(lambda: pj.add(settings, body.name))
+
+
+@router.put("/projects/{name}")
+def rename_project(name: str, body: ProjectBody, user: SessionUser = Depends(require_session),
+                   settings: Settings = Depends(get_settings)):
+    from ..aidoc import projects as pj
+    return _mapped(lambda: pj.rename(settings, name, body.name))
+
+
+@router.delete("/projects/{name}")
+def delete_project(name: str, user: SessionUser = Depends(require_session),
+                   settings: Settings = Depends(get_settings)):
+    from ..aidoc import projects as pj
+    return _mapped(lambda: pj.delete(settings, name))
 
 
 @router.get("/folders")

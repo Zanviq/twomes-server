@@ -233,8 +233,9 @@ def move(settings, actor: Actor, doc_id: str, target_project=None, target_folder
                 raise BadRequest("허용되지 않은 폴더 경로입니다.")
             top = tf.split("/", 1)[0]
             if top == "projects":  # projects/{등록프로젝트}/하위폴더 로 이동
+                from . import projects as _projects
                 parts = tf.split("/")
-                if len(parts) < 2 or parts[1] not in settings.aidoc_projects:
+                if len(parts) < 2 or not _projects.is_registered(settings, parts[1]):
                     raise BadRequest("등록되지 않은 프로젝트 폴더입니다.")
                 project = parts[1]
             elif top in allowed:
@@ -492,4 +493,5 @@ def export_folder(settings, project=None, folder=None, recursive=True) -> list[d
 
 
 def list_projects(settings) -> list[str]:
-    return list(settings.aidoc_projects)
+    from . import projects as _projects
+    return _projects.list_names(settings)

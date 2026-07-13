@@ -41,9 +41,10 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     settings.ensure_storage()
     # AI 문서 시스템: 폴더 골격 + SQLite/FTS5 스키마 초기화(멱등)
-    from .aidoc import db as aidoc_db, paths as aidoc_paths
+    from .aidoc import db as aidoc_db, paths as aidoc_paths, projects as aidoc_projects
     aidoc_paths.ensure_layout(settings)
     aidoc_db.init_db(settings)
+    aidoc_projects.ensure_seed(settings)  # 프로젝트 레지스트리 시드 + 폴더 보장
     if not settings.session_secret:
         logger.warning("SESSION_SECRET 미설정 — 로그인이 503으로 거부됩니다.")
     if not settings.users:

@@ -42,9 +42,10 @@ def test_errors():
 
 def test_paths():
     from backend.config import Settings
-    from backend.aidoc import paths
+    from backend.aidoc import paths, db
     from backend.aidoc.errors import BadRequest
     s = Settings()
+    db.init_db(s)  # 프로젝트 레지스트리 시드(new_doc_dir 검증에 필요)
     paths.ensure_layout(s)
     for f in ("inbox", "projects", "knowledge", "templates", "archive", "trash", ".history"):
         assert (s.document_root / f).is_dir()
@@ -264,6 +265,41 @@ def test_hermes_memory():
         assert "content" in memory.recall(s, "색상", project="nodi", limit=1, full=True)[0]
     finally:
         embeddings.embed_text = orig
+
+
+def test_project_registry():
+    """프로젝트 추가/이름변경(문서·폴더 마이그레이션)/삭제(휴지통)."""
+    from backend.config import Settings
+    from backend.aidoc import db, paths, service, projects
+    from backend.aidoc.schemas import CreateDoc
+    from backend.aidoc.errors import BadRequest
+    s = Settings(); db.init_db(s); paths.ensure_layout(s); projects.ensure_seed(s)
+    a = service.Actor("t")
+    assert "nodi" in projects.list_names(s)  # env 시드
+    # 추가
+    projects.add(s, "새프로젝트")
+    assert projects.is_registered(s, "새프로젝트")
+    assert (s.document_root / "projects/새프로젝트").is_dir()
+    d = service.create(s, a, CreateDoc(title="P", content="본문", project="새프로젝트"))
+    # 이름 변경 → 문서 project·storage_path·파일 마이그레이션
+    projects.rename(s, "새프로젝트", "이름바뀐")
+    assert projects.is_registered(s, "이름바뀐") and not projects.is_registered(s, "새프로젝트")
+    got = service.get(s, d["id"])
+    assert got["project"] == "이름바뀐" and got["storage_path"].startswith("projects/이름바뀐/")
+    assert got["content"] == "본문"  # 파일도 함께 이동
+    # 잘못된 이름/중복
+    try:
+        projects.add(s, "../bad"); assert False
+    except BadRequest:
+        pass
+    try:
+        projects.add(s, "nodi"); assert False
+    except BadRequest:
+        pass
+    # 삭제 → 문서 휴지통 + 레지스트리 제거
+    res = projects.delete(s, "이름바뀐")
+    assert res["trashed"] >= 1 and not projects.is_registered(s, "이름바뀐")
+    assert service.get(s, d["id"])["trashed"] is True
 
 
 def test_export_folder():
@@ -488,6 +524,13 @@ def test_routers_web_and_token():
     # 폴더 생성/목록
     assert c.post("/api/aidoc/folders", json={"project": "nodi", "path": "웹폴더"}).status_code == 200
     assert "웹폴더" in c.get("/api/aidoc/folders", params={"project": "nodi"}).json()
+    # 프로젝트 추가/이름변경/삭제
+    assert c.post("/api/aidoc/projects", json={"name": "webproj"}).status_code == 200
+    assert "webproj" in c.get("/api/aidoc/projects").json()
+    assert c.put("/api/aidoc/projects/webproj", json={"name": "webproj2"}).status_code == 200
+    assert "webproj2" in c.get("/api/aidoc/projects").json() and "webproj" not in c.get("/api/aidoc/projects").json()
+    assert c.delete("/api/aidoc/projects/webproj2").status_code == 200
+    assert "webproj2" not in c.get("/api/aidoc/projects").json()
 
     # 토큰(AI) 경로 — 헤더 인증
     h = {"Authorization": f"Bearer {raw}"}
@@ -782,6 +825,7 @@ if __name__ == "__main__":
     test_embeddings_math()
     test_semantic_search_ranking()
     test_hermes_memory()
+    test_project_registry()
     test_export_folder()
     test_reindex_scoped()
     test_aidoc_folders()
