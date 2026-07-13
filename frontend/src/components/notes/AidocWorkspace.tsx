@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot, FilePlus, Save, Trash2, History, Loader2, Search, X, RotateCcw,
-  ScrollText, AlertTriangle, Sparkles, FolderOpen, Folder, FolderPlus,
+  ScrollText, AlertTriangle, Sparkles, FolderOpen, Folder, FolderPlus, ArrowUpDown,
 } from "lucide-react";
 import { MarkdownView } from "./MarkdownView";
 import { Modal } from "../ui/Modal";
@@ -35,6 +35,21 @@ export function AidocWorkspace({ openDocId }: { openDocId?: string }) {
   const [folders, setFolders] = useState<string[]>([]);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
+  const syncingScroll = useRef(false);
+  const [scrollSync, setScrollSync] = useState(true); // 편집↔미리보기 스크롤 동기화(기본 켜짐)
+
+  // 편집 ↔ 미리보기 스크롤 비율 동기화 (피드백 루프 방지 플래그)
+  const syncScroll = (from: HTMLElement | null, to: HTMLElement | null) => {
+    if (!scrollSync || syncingScroll.current || !from || !to) return;
+    const fromMax = from.scrollHeight - from.clientHeight;
+    const toMax = to.scrollHeight - to.clientHeight;
+    if (fromMax <= 1) return;
+    syncingScroll.current = true;
+    to.scrollTop = (from.scrollTop / fromMax) * toMax;
+    requestAnimationFrame(() => { syncingScroll.current = false; });
+  };
 
   const [current, setCurrent] = useState<AidocDetail | null>(null);
   const [content, setContent] = useState("");
@@ -464,7 +479,8 @@ export function AidocWorkspace({ openDocId }: { openDocId?: string }) {
         )}
 
         {current ? (
-          <textarea value={content} onChange={(e) => onEdit(e.target.value)} onKeyDown={onKeyDown}
+          <textarea ref={taRef} value={content} onChange={(e) => onEdit(e.target.value)} onKeyDown={onKeyDown}
+            onScroll={() => syncScroll(taRef.current, previewRef.current)}
             placeholder="마크다운으로 작성…"
             className="flex-1 resize-none bg-transparent p-4 font-mono text-[13.5px] leading-relaxed outline-none placeholder:text-fg-subtle" />
         ) : (
@@ -478,8 +494,18 @@ export function AidocWorkspace({ openDocId }: { openDocId?: string }) {
       <div className="card flex min-h-[30vh] flex-col overflow-hidden lg:min-h-0">
         <div className="flex items-center justify-between border-b border-line px-3 py-2">
           <span className="label">미리보기</span>
+          <button
+            onClick={() => setScrollSync((v) => !v)}
+            title="편집·미리보기 스크롤 동기화"
+            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors ${
+              scrollSync ? "border-accent/40 bg-accent-muted text-accent-fg" : "border-line text-fg-muted hover:text-fg"
+            }`}
+          >
+            <ArrowUpDown size={11} /> 스크롤 동기화 {scrollSync ? "켜짐" : "꺼짐"}
+          </button>
         </div>
-        <div className="flex-1 overflow-auto p-4">
+        <div ref={previewRef} onScroll={() => syncScroll(previewRef.current, taRef.current)}
+          className="flex-1 overflow-auto p-4">
           {current ? <MarkdownView content={content} onWikiClick={() => {}} />
             : <p className="text-[13px] text-fg-muted">선택된 문서 없음</p>}
         </div>
