@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot, FilePlus, Save, Trash2, History, Loader2, Search, X, RotateCcw,
   ScrollText, AlertTriangle, Sparkles, FolderOpen, Folder, FolderPlus, ArrowUpDown,
+  ChevronRight, ChevronDown, Home,
 } from "lucide-react";
 import { MarkdownView } from "./MarkdownView";
 import { Modal } from "../ui/Modal";
@@ -12,6 +13,8 @@ import {
 import { toast } from "../../store/toast";
 
 const INBOX = "__inbox__"; // 프로젝트 미지정(inbox) 필터 값
+
+interface FTree { name: string; path: string; children: FTree[]; docs: AidocMeta[]; }
 
 function fmt(iso: string): string {
   const d = new Date(iso);
@@ -35,6 +38,7 @@ export function AidocWorkspace({ openDocId }: { openDocId?: string }) {
   const [folders, setFolders] = useState<string[]>([]);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const taRef = useRef<HTMLTextAreaElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const syncingScroll = useRef(false);
@@ -107,6 +111,76 @@ export function AidocWorkspace({ openDocId }: { openDocId?: string }) {
     const rest = sp.slice(folderBase.length);
     const i = rest.lastIndexOf("/");
     return i >= 0 ? rest.slice(0, i) : "";
+  };
+
+  const toggleFolder = (path: string) => {
+    setFolder(path); // 새 문서/폴더 생성 위치 = 현재 폴더
+    setExpanded((s) => {
+      const n = new Set(s);
+      n.has(path) ? n.delete(path) : n.add(path);
+      return n;
+    });
+  };
+
+  // 폴더/문서를 중첩 트리로 구성(빈 폴더는 folders 목록으로)
+  const tree = useMemo(() => {
+    const root: FTree = { name: "", path: "", children: [], docs: [] };
+    const byPath = new Map<string, FTree>([["", root]]);
+    const ensure = (path: string): FTree => {
+      if (byPath.has(path)) return byPath.get(path)!;
+      const parts = path.split("/");
+      const parent = ensure(parts.slice(0, -1).join("/"));
+      const node: FTree = { name: parts[parts.length - 1], path, children: [], docs: [] };
+      parent.children.push(node); byPath.set(path, node); return node;
+    };
+    folders.forEach((f) => ensure(f));
+    docs.forEach((d) => ensure(docFolder(d)).docs.push(d));
+    const sort = (n: FTree) => {
+      n.children.sort((a, b) => a.name.localeCompare(b.name));
+      n.docs.sort((a, b) => a.title.localeCompare(b.title));
+      n.children.forEach(sort);
+    };
+    sort(root);
+    return root;
+  }, [folders, docs, folderBase]);
+
+  const renderTree = (node: FTree, depth: number): JSX.Element[] => {
+    const rows: JSX.Element[] = [];
+    for (const child of node.children) {
+      const isOpen = expanded.has(child.path);
+      rows.push(
+        <li key={"f:" + child.path}>
+          <button onClick={() => toggleFolder(child.path)}
+            className={`flex w-full items-center gap-1 rounded-md py-1.5 pr-1 text-left text-[13px] ${folder === child.path ? "bg-accent-muted" : "hover:bg-hovered"}`}
+            style={{ paddingLeft: depth * 12 + 4 }}>
+            {isOpen ? <ChevronDown size={13} className="shrink-0 text-fg-muted" />
+              : <ChevronRight size={13} className="shrink-0 text-fg-muted" />}
+            <Folder size={14} className="shrink-0 text-warning" />
+            <span className="truncate font-medium">{child.name}</span>
+          </button>
+        </li>,
+      );
+      if (isOpen) rows.push(...renderTree(child, depth + 1));
+    }
+    for (const d of node.docs) {
+      rows.push(
+        <li key={"d:" + d.id}>
+          <div className={`group flex items-center gap-2 rounded-md pr-1 ${current?.id === d.id ? "bg-accent-muted" : "hover:bg-hovered"}`}
+            style={{ paddingLeft: depth * 12 + 22 }}>
+            <button onClick={() => open(d.id)} className="flex min-w-0 flex-1 items-center gap-1.5 py-1.5 text-left">
+              <Bot size={13} className="shrink-0 text-accent" />
+              <span className="truncate text-[13px]">{d.title}</span>
+              <span className="shrink-0 text-[10.5px] text-fg-muted">v{d.version}</span>
+            </button>
+            <button onClick={() => setDelId(d.id)} title="휴지통으로"
+              className="hidden shrink-0 rounded p-1 text-fg-muted hover:text-danger group-hover:block">
+              <Trash2 size={12} />
+            </button>
+          </div>
+        </li>,
+      );
+    }
+    return rows;
   };
 
   const open = useCallback(async (id: string) => {
@@ -318,9 +392,8 @@ export function AidocWorkspace({ openDocId }: { openDocId?: string }) {
     }, 300);
   };
 
-  const listItems = (hits !== null ? hits : docs).filter(
-    (d) => !folderEnabled || !folder || docFolder(d) === folder,
-  );
+  const listItems = hits !== null ? hits : docs;
+  const showTree = folderEnabled && !showTrash && hits === null; // 특정 프로젝트/inbox + 비검색 = 트리
   const projName = (p: string | null) => p ?? "미분류";
   const aiEdited = useMemo(
     () => !!current?.updated_by && /codex|claude|gpt|ai|gemini/i.test(current.updated_by),
@@ -365,18 +438,14 @@ export function AidocWorkspace({ openDocId }: { openDocId?: string }) {
           </button>
         </div>
 
-        {/* 폴더 필터 + 새 폴더 (특정 프로젝트/inbox 선택 시) */}
+        {/* 현재 위치 + 새 폴더 (특정 프로젝트/inbox 선택 시) — 새 폴더/문서는 이 위치에 생성 */}
         {folderEnabled && !showTrash && (
-          <div className="flex items-center gap-1.5 border-b border-line px-2 py-1.5">
-            <Folder size={13} className="shrink-0 text-warning" />
-            <select
-              value={folder}
-              onChange={(e) => setFolder(e.target.value)}
-              className="h-7 flex-1 cursor-pointer appearance-none rounded-md border border-line bg-subtle px-2 text-[12px] outline-none hover:border-line-strong focus:border-accent"
-            >
-              <option value="">전체 (모든 폴더)</option>
-              {folders.map((f) => <option key={f} value={f}>{f}</option>)}
-            </select>
+          <div className="flex items-center gap-1.5 border-b border-line px-2 py-1.5 text-[11.5px] text-fg-muted">
+            <button onClick={() => setFolder("")}
+              className="flex min-w-0 flex-1 items-center gap-1 text-left hover:text-accent" title="루트로">
+              <Home size={12} className="shrink-0" />
+              <span className="truncate">위치: {folder || "루트"}</span>
+            </button>
             <button
               onClick={() => { setNewFolderName(""); setNewFolderOpen(true); }}
               title="새 폴더" aria-label="새 폴더"
@@ -403,7 +472,13 @@ export function AidocWorkspace({ openDocId }: { openDocId?: string }) {
         </div>
 
         <ul className="flex-1 overflow-auto p-1">
-          {listItems.length === 0 ? (
+          {showTree ? (
+            docs.length === 0 && folders.length === 0 ? (
+              <li className="px-2 py-6 text-center text-[12px] text-fg-muted">문서가 없습니다</li>
+            ) : (
+              renderTree(tree, 0)
+            )
+          ) : listItems.length === 0 ? (
             <li className="px-2 py-6 text-center text-[12px] text-fg-muted">
               {showTrash ? "휴지통이 비었습니다" : "문서가 없습니다"}
             </li>
