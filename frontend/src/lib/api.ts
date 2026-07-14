@@ -209,6 +209,8 @@ export const api = {
   aidocDeleteProject: (name: string) =>
     req<{ deleted: string; trashed: number }>(`/api/aidoc/projects/${encodeURIComponent(name)}`, { method: "DELETE" }),
   aidocAudit: () => req<AidocAuditLog[]>("/api/aidoc/audit-logs"),
+  aidocReindex: () =>
+    req<{ indexed: number; skipped: number; failed: number }>("/api/aidoc/reindex", { method: "POST" }),
   aidocSemantic: (query: string, project?: string, limit = 10) => {
     const p: Record<string, string> = { q: query, limit: String(limit) };
     if (project) p.project = project;

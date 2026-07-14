@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot, FilePlus, Save, Trash2, History, Loader2, Search, X, RotateCcw,
   ScrollText, AlertTriangle, Sparkles, FolderOpen, Folder, FolderPlus, ArrowUpDown,
-  ChevronRight, ChevronDown, Home, Plus, Pencil, MoreHorizontal, FolderInput,
+  ChevronRight, ChevronDown, Home, Plus, Pencil, MoreHorizontal, FolderInput, RefreshCw,
 } from "lucide-react";
 import { MarkdownView } from "./MarkdownView";
 import { ThreePane } from "./ThreePane";
@@ -77,6 +77,7 @@ export function AidocWorkspace({ openDocId }: { openDocId?: string }) {
   const [moveProject, setMoveProject] = useState<string>(""); // "" = inbox
   const [moveFolder, setMoveFolder] = useState<string>(""); // "" = 루트
   const [moveFolders, setMoveFolders] = useState<string[]>([]);
+  const [reindexing, setReindexing] = useState(false);
 
   const [historyOpen, setHistoryOpen] = useState(false);
   const [history, setHistory] = useState<AidocVersion[] | null>(null);
@@ -506,6 +507,18 @@ export function AidocWorkspace({ openDocId }: { openDocId?: string }) {
     [current],
   );
 
+  const doReindex = async () => {
+    setReindexing(true);
+    try {
+      const r = await api.aidocReindex();
+      toast.ok(`재색인 완료 · 색인 ${r.indexed} / 유지 ${r.skipped}${r.failed ? ` / 실패 ${r.failed}` : ""}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "재색인 실패");
+    } finally {
+      setReindexing(false);
+    }
+  };
+
   const doRename = async () => {
     if (!renameFor || !renameTitle.trim()) return;
     try {
@@ -544,6 +557,10 @@ export function AidocWorkspace({ openDocId }: { openDocId?: string }) {
         <div className="flex items-center justify-between border-b border-line px-3 py-2">
           <span className="label flex items-center gap-1.5"><Sparkles size={13} className="text-accent" /> AI 문서 {docs.length}</span>
           <div className="flex items-center gap-0.5">
+            <button onClick={doReindex} disabled={reindexing} className="btn btn-ghost h-7 px-2 disabled:opacity-40"
+              title="임베딩 재색인(의미검색·그래프 갱신)" aria-label="재색인">
+              <RefreshCw size={15} className={reindexing ? "animate-spin" : ""} />
+            </button>
             <button onClick={openAudit} className="btn btn-ghost h-7 px-2" title="감사 로그" aria-label="감사 로그">
               <ScrollText size={15} />
             </button>
