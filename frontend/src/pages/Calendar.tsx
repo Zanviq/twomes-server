@@ -131,27 +131,29 @@ export function Calendar() {
         </div>
       }
     >
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-        <div className="card fc-server min-w-0 flex-1 p-4">
-          <FullCalendar
-            plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-            initialView={defaultView}
-            firstDay={weekStart}
-            locale="ko"
-            headerToolbar={{
-              left: "prev,next today",
-              center: "title",
-              right: "dayGridMonth,timeGridWeek,timeGridDay",
-            }}
-            buttonText={{ today: "오늘", month: "월", week: "주", day: "일" }}
-            events={fcEvents}
-            datesSet={onDatesSet}
-            dateClick={onDateClick}
-            eventClick={onEventClick}
-            dayMaxEvents={3}
-            height="auto"
-            nowIndicator
-          />
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-stretch">
+        <div className="card fc-server flex min-w-0 flex-1 flex-col p-4 h-[70vh] lg:h-[calc(100vh-9rem)]">
+          <div className="min-h-0 flex-1">
+            <FullCalendar
+              plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+              initialView={defaultView}
+              firstDay={weekStart}
+              locale="ko"
+              headerToolbar={{
+                left: "prev,next today",
+                center: "title",
+                right: "dayGridMonth,timeGridWeek,timeGridDay",
+              }}
+              buttonText={{ today: "오늘", month: "월", week: "주", day: "일" }}
+              events={fcEvents}
+              datesSet={onDatesSet}
+              dateClick={onDateClick}
+              eventClick={onEventClick}
+              dayMaxEvents={true}
+              height="100%"
+              nowIndicator
+            />
+          </div>
         </div>
         <div className="card flex h-[70vh] w-full flex-col p-4 lg:h-[calc(100vh-9rem)] lg:w-[380px] lg:shrink-0">
           <div className="mb-2 flex items-center gap-2 border-b border-line/50 pb-2 text-sm font-semibold">
