@@ -54,6 +54,20 @@ class RestoreDoc(BaseModel):
     version: int | None = None  # None → 휴지통 복원, 값 → 해당 버전으로 복원
 
 
+class SyncEntry(BaseModel):
+    path: str  # 스코프 기준 상대경로(= 서버 relative_path)
+    local_hash: str | None = None       # 로컬 현재 본문 해시(LF 정규화 sha256). None=로컬 삭제
+    synced_version: int | None = None   # 매니페스트 baseline 버전(신규=None)
+    synced_hash: str | None = None       # 매니페스트 baseline 해시(신규=None)
+
+
+class SyncPlanBody(BaseModel):
+    project: str | None = None
+    folder: str | None = None
+    mode: str = "ai"  # local|server|ai (진짜 충돌에만 적용)
+    entries: list[SyncEntry] = Field(default_factory=list)
+
+
 class DocMeta(BaseModel):
     id: str
     title: str

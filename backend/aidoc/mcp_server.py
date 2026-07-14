@@ -11,7 +11,7 @@ from .schemas import AppendDoc, CreateDoc, MoveDoc, RestoreDoc, UpdateDoc
 from .tokens import Principal
 
 SERVER_NAME = "hermes"
-SERVER_VERSION = "1.1.0"
+SERVER_VERSION = "1.2.0"
 DEFAULT_PROTOCOL = "2025-06-18"
 SERVER_INSTRUCTIONS = (
     "Hermes MCP — 홈서버 AI 문서 관리 + 교차 세션 메모리. "
@@ -91,6 +91,27 @@ TOOLS = [
            "folder": {"type": "string", "description": "프로젝트 하위 폴더(선택). 미지정=전체"},
            "recursive": {"type": "boolean", "description": "하위 폴더까지 포함(기본 true)"}},
           []),
+    _tool("sync_plan",
+          "로컬 파일과 서버 문서를 3-way로 비교해 동기화 '계획'을 산출한다(읽기 전용, 서버를 바꾸지 않음). "
+          "로컬에 .hermes-sync.json 매니페스트를 두고, 각 파일을 entries로 보낸다: "
+          "path=스코프 기준 상대경로, local_hash=개행을 LF로 정규화한 UTF-8 본문의 sha256(hex, 로컬삭제 시 null), "
+          "synced_version·synced_hash=매니페스트 baseline(신규 파일이면 null). "
+          "mode는 '진짜 충돌'(양쪽이 서로 다르게 변경, 삭제 vs 수정 포함)에만 적용: "
+          "'local'=로컬 우선, 'server'=서버 우선, 'ai'=충돌을 conflict로 돌려받아 직접 판단(기본). "
+          "반환: pull·pull_create(로컬에 content 저장), push·push_create(로컬 내용으로 update_document/create_document 호출), "
+          "delete_local(로컬 파일 삭제)·delete_server(trash_document 호출), conflict(ai 모드), noop(이미 동일). "
+          "→ 계획대로 기존 도구를 실행한 뒤 매니페스트를 갱신하라. push는 expected_version으로 update_document 호출"
+          "(409면 get 후 재계획). 스코프(project/folder)는 매니페스트 생성 때와 동일하게 유지하라.",
+          {"project": {"type": "string", "description": "프로젝트명(선택). 미지정=inbox"},
+           "folder": {"type": "string", "description": "프로젝트 하위 기준 폴더(선택). 미지정=전체"},
+           "mode": {"type": "string", "description": "local|server|ai(기본 ai)"},
+           "entries": {"type": "array", "description": "로컬 파일 상태 목록",
+                       "items": {"type": "object",
+                                 "properties": {"path": _STR, "local_hash": _STR,
+                                                "synced_version": {"type": "integer"},
+                                                "synced_hash": _STR},
+                                 "required": ["path"]}}},
+          ["entries"]),
     # ── Hermes 메모리 ──
     _tool("recall",
           "과거 결정·사용자 의도·실수를 의미검색으로 회상한다(작업 전 확인용). "
@@ -230,6 +251,13 @@ def call_tool(settings, p: Principal, name: str, args: dict):
         authz.need_resource(p, project)  # project 접근권(inbox=None은 '*'만)
         return service.export_folder(settings, project=project, folder=args.get("folder"),
                                      recursive=args.get("recursive", True))
+
+    if name == "sync_plan":
+        authz.need_scope(p, "documents:read")
+        project = args.get("project")
+        authz.need_resource(p, project)  # 스코프 프로젝트 접근권(inbox=None은 '*'만)
+        return service.sync_plan(settings, project=project, folder=args.get("folder"),
+                                 mode=args.get("mode") or "ai", entries=args.get("entries") or [])
 
     if name == "recall":
         from . import memory

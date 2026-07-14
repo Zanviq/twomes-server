@@ -10,7 +10,9 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query
 
 from ..config import Settings, get_settings
 from ..aidoc import authz, cf_access, service, tokens
-from ..aidoc.schemas import AppendDoc, CreateDoc, MoveDoc, RememberBody, RestoreDoc, UpdateDoc
+from ..aidoc.schemas import (
+    AppendDoc, CreateDoc, MoveDoc, RememberBody, RestoreDoc, SyncPlanBody, UpdateDoc,
+)
 from ..aidoc.tokens import Principal
 from ._aidoc_util import mapped as _mapped
 
@@ -75,6 +77,17 @@ def export_folder(project: str = Query(None), folder: str = Query(None),
         authz.need_resource(p, project or None)
         return service.export_folder(settings, project=project or None, folder=folder or None,
                                      recursive=recursive)
+    return _mapped(op)
+
+
+@router.post("/documents/sync-plan")
+def sync_plan(body: SyncPlanBody, p: Principal = Depends(require_principal),
+              settings: Settings = Depends(get_settings)):
+    def op():
+        authz.need_scope(p, "documents:read")
+        authz.need_resource(p, body.project or None)  # 스코프 프로젝트 접근권
+        return service.sync_plan(settings, project=body.project or None, folder=body.folder or None,
+                                 mode=body.mode, entries=[e.model_dump() for e in body.entries])
     return _mapped(op)
 
 

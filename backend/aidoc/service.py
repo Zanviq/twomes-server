@@ -492,6 +492,51 @@ def export_folder(settings, project=None, folder=None, recursive=True) -> list[d
     return out
 
 
+def _scope_server_docs(settings, project=None, folder=None) -> dict[str, dict]:
+    """스코프(project/folder) 내 서버 문서를 {상대경로: {id,version,content,hash}}로.
+
+    상대경로는 export_folder와 동일 기준(스코프 prefix 기준) → AI가 매니페스트에서
+    쓰는 path와 일치한다. 3-way 동기화 계획 산출에 사용.
+    """
+    from . import sync
+    base = paths.new_doc_dir(settings, project)  # 프로젝트 검증(미등록 → BadRequest)
+    prefix = base
+    if folder:
+        sub = folder.replace("\\", "/").strip("/")
+        if ".." in sub.split("/"):
+            raise BadRequest("잘못된 폴더 경로입니다.")
+        prefix = f"{base}/{sub}"
+    conn = db.connect(settings)
+    try:
+        rows = conn.execute(
+            "SELECT id,storage_path,version,project FROM documents WHERE trashed=0 AND mem_type IS NULL"
+        ).fetchall()
+    finally:
+        conn.close()
+    out: dict[str, dict] = {}
+    for r in rows:
+        sp = r["storage_path"]
+        if not sp.startswith(prefix + "/"):
+            continue
+        rel = sp[len(prefix) + 1:]
+        try:
+            content = store.read(settings, sp)
+        except Exception:  # noqa: BLE001 - 파일 없음 등
+            continue
+        out[rel] = {"id": r["id"], "version": r["version"],
+                    "content": content, "hash": sync.content_hash(content)}
+    return out
+
+
+def sync_plan(settings, *, project=None, folder=None, mode="ai", entries=None) -> dict:
+    """로컬 매니페스트(entries)와 서버 상태를 3-way 비교한 동기화 계획(읽기 전용)."""
+    from . import sync
+    if mode not in sync.VALID_MODES:
+        raise BadRequest(f"mode는 {sync.VALID_MODES} 중 하나여야 합니다: {mode}")
+    server_docs = _scope_server_docs(settings, project=project, folder=folder)
+    return sync.plan(entries or [], server_docs, mode=mode)
+
+
 def list_projects(settings) -> list[str]:
     from . import projects as _projects
     return _projects.list_names(settings)

@@ -402,6 +402,169 @@ def test_aidoc_graph():
         embeddings.embed_text = orig
 
 
+def test_sync_content_hash():
+    from backend.aidoc import sync
+    # 개행 정규화: CRLF/CR/LF 동일 해시
+    assert sync.content_hash("a\r\nb") == sync.content_hash("a\nb") == sync.content_hash("a\rb")
+    # 내용이 다르면 해시가 다름
+    assert sync.content_hash("a") != sync.content_hash("b")
+    assert sync.content_hash("") == sync.content_hash(None)
+
+
+def _sd(h, ver=1, doc_id=None, content="srv"):
+    return {"id": doc_id or "doc_x", "version": ver, "hash": h, "content": content}
+
+
+def test_sync_plan_pure():
+    """3-way 분류 표를 mode별로 검증(순수 로직, DB 없음)."""
+    from backend.aidoc import sync
+    H = sync.content_hash
+
+    def plan(entries, server, mode="ai"):
+        return sync.plan(entries, server, mode=mode)
+
+    # ── baseline 없음(신규) ──
+    # 로컬만 존재 → push_create
+    p = plan([{"path": "a", "local_hash": H("x")}], {})
+    assert [i["path"] for i in p["push_create"]] == ["a"]
+    # 서버만 존재 → pull_create
+    p = plan([], {"b": _sd(H("y"), content="y")})
+    assert p["pull_create"][0]["path"] == "b" and p["pull_create"][0]["content"] == "y"
+    # 양쪽 존재·동일 → noop
+    p = plan([{"path": "c", "local_hash": H("z")}], {"c": _sd(H("z"))})
+    assert [i["path"] for i in p["noop"]] == ["c"]
+    # 양쪽 존재·상이 → conflict(both_new)
+    p = plan([{"path": "d", "local_hash": H("l")}], {"d": _sd(H("s"))})
+    assert p["conflict"][0]["kind"] == "both_new"
+
+    # ── baseline 있음 ──
+    base = H("base")
+    # 변경 없음 → noop
+    p = plan([{"path": "e", "local_hash": base, "synced_hash": base, "synced_version": 1}],
+             {"e": _sd(base)})
+    assert [i["path"] for i in p["noop"]] == ["e"]
+    # 로컬만 변경 → push
+    p = plan([{"path": "f", "local_hash": H("new"), "synced_hash": base, "synced_version": 2}],
+             {"f": _sd(base, ver=2)})
+    assert p["push"][0] == {"path": "f", "id": "doc_x", "expected_version": 2}
+    # 로컬 삭제(서버 그대로) → delete_server
+    p = plan([{"path": "g", "local_hash": None, "synced_hash": base, "synced_version": 3}],
+             {"g": _sd(base, ver=3)})
+    assert p["delete_server"][0] == {"path": "g", "id": "doc_x", "expected_version": 3}
+    # 서버만 변경 → pull
+    p = plan([{"path": "h", "local_hash": base, "synced_hash": base, "synced_version": 1}],
+             {"h": _sd(H("srvnew"), content="srvnew")})
+    assert p["pull"][0]["path"] == "h" and p["pull"][0]["content"] == "srvnew"
+    # 서버 삭제(로컬 그대로) → delete_local
+    p = plan([{"path": "i", "local_hash": base, "synced_hash": base, "synced_version": 1}], {})
+    assert [x["path"] for x in p["delete_local"]] == ["i"]
+    # 양쪽이 같은 내용으로 변경 → noop
+    same = H("same")
+    p = plan([{"path": "j", "local_hash": same, "synced_hash": base, "synced_version": 1}],
+             {"j": _sd(same)})
+    assert [x["path"] for x in p["noop"]] == ["j"]
+
+    # ── 진짜 충돌(양쪽 상이 변경)과 mode ──
+    entry = {"path": "k", "local_hash": H("LL"), "synced_hash": base, "synced_version": 5}
+    srv = {"k": _sd(H("SS"), ver=6)}
+    # ai → conflict(both_edited) + 컨텍스트
+    p = plan([entry], srv, mode="ai")
+    c = p["conflict"][0]
+    assert c["kind"] == "both_edited" and c["base_version"] == 5 and c["server_version"] == 6
+    # local → 로컬 우선 push
+    p = plan([entry], srv, mode="local")
+    assert p["push"][0]["expected_version"] == 6 and not p["conflict"]
+    # server → 서버 우선 pull
+    p = plan([entry], srv, mode="server")
+    assert p["pull"][0]["path"] == "k" and not p["conflict"]
+
+    # 삭제 vs 수정 충돌: 로컬 삭제 + 서버 수정
+    entry_del = {"path": "m", "local_hash": None, "synced_hash": base, "synced_version": 1}
+    srv_edit = {"m": _sd(H("edited"), ver=2)}
+    assert plan([entry_del], srv_edit, mode="ai")["conflict"][0]["kind"] == "local_deleted_server_edited"
+    # local 우선 → 서버 trash(delete_server)
+    assert plan([entry_del], srv_edit, mode="local")["delete_server"][0]["path"] == "m"
+    # server 우선 → 로컬로 되살림(pull)
+    assert plan([entry_del], srv_edit, mode="server")["pull"][0]["path"] == "m"
+
+    # 로컬 수정 + 서버 삭제
+    entry_edit = {"path": "n", "local_hash": H("locedit"), "synced_hash": base, "synced_version": 1}
+    assert plan([entry_edit], {}, mode="ai")["conflict"][0]["kind"] == "local_edited_server_deleted"
+    # local 우선 → 서버 재생성(push_create)
+    assert plan([entry_edit], {}, mode="local")["push_create"][0]["path"] == "n"
+    # server 우선(서버 삭제 승) → 로컬 삭제(delete_local)
+    assert plan([entry_edit], {}, mode="server")["delete_local"][0]["path"] == "n"
+
+    # 잘못된 mode → ValueError
+    try:
+        plan([], {}, mode="nope"); assert False
+    except ValueError:
+        pass
+
+
+def test_sync_plan_service_and_mcp():
+    """서비스 스코프 로딩 + MCP sync_plan 왕복(권한·계획 산출)."""
+    import hashlib, json, os
+    from fastapi.testclient import TestClient
+    from backend.config import Settings
+    from backend.aidoc import db, paths, service, sync, tokens
+    from backend.aidoc.schemas import CreateDoc
+    from backend.main import app
+    s = Settings(); db.init_db(s); paths.ensure_layout(s)
+    a = service.Actor("t")
+    # 서버에 문서 2개(nodi/knowledge 하위)
+    d1 = service.create(s, a, CreateDoc(title="SyncA", content="alpha\n", project="nodi", folder="knowledge"))
+    service.create(s, a, CreateDoc(title="SyncB", content="beta\n", project="nodi", folder="knowledge"))
+    server_docs = service._scope_server_docs(s, project="nodi", folder="knowledge")
+    rels = set(server_docs)
+    assert any(r.endswith("synca.md") for r in rels) and any(r.endswith("syncb.md") for r in rels)
+    a_rel = next(r for r in rels if r.endswith("synca.md"))
+    assert server_docs[a_rel]["hash"] == sync.content_hash("alpha\n")
+
+    # 로컬이 SyncA를 수정, 새 로컬 파일 하나 추가, SyncB는 baseline 그대로
+    b_rel = next(r for r in rels if r.endswith("syncb.md"))
+    entries = [
+        {"path": a_rel, "local_hash": sync.content_hash("alpha edited\n"),
+         "synced_hash": sync.content_hash("alpha\n"), "synced_version": server_docs[a_rel]["version"]},
+        {"path": b_rel, "local_hash": server_docs[b_rel]["hash"],
+         "synced_hash": server_docs[b_rel]["hash"], "synced_version": server_docs[b_rel]["version"]},
+        {"path": "새문서.md", "local_hash": sync.content_hash("local only\n")},
+    ]
+    plan = service.sync_plan(s, project="nodi", folder="knowledge", mode="ai", entries=entries)
+    assert plan["push"][0]["id"] == d1["id"]                # SyncA → push
+    assert [x["path"] for x in plan["push_create"]] == ["새문서.md"]  # 신규 → push_create
+    assert [x["path"] for x in plan["noop"]] == [b_rel]      # SyncB → noop
+
+    # 잘못된 mode → BadRequest
+    try:
+        service.sync_plan(s, project="nodi", mode="bad", entries=[]); assert False
+    except Exception as e:  # BadRequest(=AidocError)
+        assert getattr(e, "status", None) == 400
+
+    # ── MCP 왕복: nodi 토큰 ──
+    raw = "sync-tok-1"
+    os.makedirs(os.path.dirname(s.aidoc_tokens_file), exist_ok=True)
+    json.dump([{"name": "nodi-sync", "token_sha256": hashlib.sha256(raw.encode()).hexdigest(),
+                "actor": "codex", "scopes": ["documents:read", "documents:update", "documents:create"],
+                "allowed_projects": ["nodi"]}], open(s.aidoc_tokens_file, "w"))
+    tokens.reload_cache()
+    c = TestClient(app); h = {"Authorization": f"Bearer {raw}"}
+    res = c.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                              "params": {"name": "sync_plan",
+                                         "arguments": {"project": "nodi", "folder": "knowledge",
+                                                       "mode": "ai", "entries": entries}}},
+                 headers=h).json()["result"]
+    assert res["isError"] is False
+    out = json.loads(res["content"][0]["text"])
+    assert out["push"] and out["push_create"] and out["noop"]
+    # 권한 밖 프로젝트 스코프 → isError(FORBIDDEN)
+    bad = c.post("/mcp", json={"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                               "params": {"name": "sync_plan",
+                                          "arguments": {"project": "orchestra-room", "entries": []}}},
+                 headers=h).json()["result"]
+    assert bad["isError"] is True and "FORBIDDEN" in bad["content"][0]["text"]
+
+
 def test_service_move_trash_restore():
     from backend.config import Settings
     from backend.aidoc import db, paths, service
@@ -633,8 +796,9 @@ def test_mcp_handshake_and_tools():
     names = {t["name"] for t in tl["result"]["tools"]}
     assert "create_document" in names and "search_documents" in names
     assert "semantic_search" in names and "reindex" in names and "export_folder" in names
+    assert "sync_plan" in names
     assert {"recall", "remember", "list_memories"} <= names
-    assert len(tl["result"]["tools"]) == 17
+    assert len(tl["result"]["tools"]) == 18
     # 알 수 없는 메서드 → -32601
     err = c.post("/mcp", json={"jsonrpc": "2.0", "id": 3, "method": "no/such"}, headers=h).json()
     assert err["error"]["code"] == -32601
@@ -830,6 +994,9 @@ if __name__ == "__main__":
     test_reindex_scoped()
     test_aidoc_folders()
     test_aidoc_graph()
+    test_sync_content_hash()
+    test_sync_plan_pure()
+    test_sync_plan_service_and_mcp()
     test_append_concurrent_no_loss()
     test_service_move_trash_restore()
     test_service_list_search()
