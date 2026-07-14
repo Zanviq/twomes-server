@@ -145,6 +145,22 @@ export function AidocWorkspace({ openDocId }: { openDocId?: string }) {
     });
   };
 
+  // 드래그로 폴더에 넣기: 문서를 folderBase 기준 folderPath로 이동(move_document)
+  const [dragOver, setDragOver] = useState<string | null>(null);
+  const moveToFolder = async (docId: string, folderPath: string) => {
+    const base = folderBase.replace(/\/$/, ""); // "projects/{p}" 또는 "inbox"
+    if (!base) return;
+    const target_folder = folderPath ? `${base}/${folderPath}` : base;
+    try {
+      await api.aidocMove(docId, { target_folder });
+      toast.ok("이동했습니다");
+      await reload();
+      if (current?.id === docId) open(docId);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "이동 실패");
+    }
+  };
+
   // 폴더/문서를 중첩 트리로 구성(빈 폴더는 folders 목록으로)
   const tree = useMemo(() => {
     const root: FTree = { name: "", path: "", children: [], docs: [] };
@@ -174,7 +190,18 @@ export function AidocWorkspace({ openDocId }: { openDocId?: string }) {
       rows.push(
         <li key={"f:" + child.path}>
           <button onClick={() => toggleFolder(child.path)}
-            className={`flex w-full items-center gap-1 rounded-md py-1.5 pr-1 text-left text-[13px] ${folder === child.path ? "bg-accent-muted" : "hover:bg-hovered"}`}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(child.path); }}
+            onDragLeave={() => setDragOver((p) => (p === child.path ? null : p))}
+            onDrop={(e) => {
+              e.preventDefault();
+              const id = e.dataTransfer.getData("text/plain");
+              setDragOver(null);
+              if (id) moveToFolder(id, child.path);
+            }}
+            className={`flex w-full items-center gap-1 rounded-md py-1.5 pr-1 text-left text-[13px] ${
+              dragOver === child.path ? "ring-1 ring-accent bg-accent-muted"
+              : folder === child.path ? "bg-accent-muted" : "hover:bg-hovered"
+            }`}
             style={{ paddingLeft: depth * 12 + 4 }}>
             {isOpen ? <ChevronDown size={13} className="shrink-0 text-fg-muted" />
               : <ChevronRight size={13} className="shrink-0 text-fg-muted" />}
@@ -187,7 +214,9 @@ export function AidocWorkspace({ openDocId }: { openDocId?: string }) {
     }
     for (const d of node.docs) {
       rows.push(
-        <li key={"d:" + d.id}>
+        <li key={"d:" + d.id}
+          draggable
+          onDragStart={(e) => { e.dataTransfer.setData("text/plain", d.id); e.dataTransfer.effectAllowed = "move"; }}>
           <div className={`group flex items-center gap-2 rounded-md pr-1 ${current?.id === d.id ? "bg-accent-muted" : "hover:bg-hovered"}`}
             style={{ paddingLeft: depth * 12 + 22 }}>
             <button onClick={() => open(d.id)} className="flex min-w-0 flex-1 items-center gap-1.5 py-1.5 text-left">
@@ -554,7 +583,18 @@ export function AidocWorkspace({ openDocId }: { openDocId?: string }) {
         {folderEnabled && !showTrash && (
           <div className="flex items-center gap-1.5 border-b border-line px-2 py-1.5 text-[11.5px] text-fg-muted">
             <button onClick={() => setFolder("")}
-              className="flex min-w-0 flex-1 items-center gap-1 text-left hover:text-accent" title="루트로">
+              onDragOver={(e) => { e.preventDefault(); setDragOver("\0root"); }}
+              onDragLeave={() => setDragOver((p) => (p === "\0root" ? null : p))}
+              onDrop={(e) => {
+                e.preventDefault();
+                const id = e.dataTransfer.getData("text/plain");
+                setDragOver(null);
+                if (id) moveToFolder(id, "");
+              }}
+              className={`flex min-w-0 flex-1 items-center gap-1 rounded text-left hover:text-accent ${
+                dragOver === "\0root" ? "ring-1 ring-accent" : ""
+              }`}
+              title="루트로 (여기로 드래그하면 프로젝트 루트로 이동)">
               <Home size={12} className="shrink-0" />
               <span className="truncate">위치: {folder || "루트"}</span>
             </button>
