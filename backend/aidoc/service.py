@@ -416,23 +416,27 @@ def semantic_search(settings, query: str, *, project=None, limit: int = 10) -> l
     )[: max(1, int(limit))]
     if not scored:
         return []
+    ids = [doc_id for _, doc_id in scored]
     conn = db.connect(settings)
     try:
-        out = []
-        for score, doc_id in scored:
-            row = conn.execute("SELECT * FROM documents WHERE id=?", (doc_id,)).fetchone()
-            if not row:
-                continue
-            m = _row_to_meta(row)
-            m["score"] = round(float(score), 4)
-            try:
-                m["snippet"] = store.read(settings, row["storage_path"]).strip().replace("\n", " ")[:160]
-            except Exception:  # noqa: BLE001
-                m["snippet"] = ""
-            out.append(m)
-        return out
+        ph = ",".join("?" * len(ids))
+        rows = conn.execute(f"SELECT * FROM documents WHERE id IN ({ph})", ids).fetchall()
     finally:
         conn.close()
+    by_id = {r["id"]: r for r in rows}
+    out = []
+    for score, doc_id in scored:  # 점수 순서 유지
+        row = by_id.get(doc_id)
+        if not row:
+            continue
+        m = _row_to_meta(row)
+        m["score"] = round(float(score), 4)
+        try:
+            m["snippet"] = store.read(settings, row["storage_path"]).strip().replace("\n", " ")[:160]
+        except Exception:  # noqa: BLE001
+            m["snippet"] = ""
+        out.append(m)
+    return out
 
 
 def create_folder(settings, project, path: str) -> dict:

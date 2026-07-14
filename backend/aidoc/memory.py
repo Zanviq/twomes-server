@@ -37,14 +37,29 @@ def _last_change(conn, doc_id: str):
     return r["change_summary"] if r else None
 
 
-def _hit(conn, settings, row, score: float, full: bool) -> dict:
+def _last_changes(conn, doc_ids) -> dict[str, str]:
+    """여러 문서의 최신 버전 change_summary를 한 쿼리로(문서당 별도 쿼리 N+1 제거)."""
+    doc_ids = list(doc_ids)
+    if not doc_ids:
+        return {}
+    ph = ",".join("?" * len(doc_ids))
+    rows = conn.execute(
+        f"SELECT dv.doc_id AS doc_id, dv.change_summary AS cs FROM document_versions dv "
+        f"JOIN (SELECT doc_id, MAX(version) mv FROM document_versions WHERE doc_id IN ({ph}) "
+        f"GROUP BY doc_id) m ON dv.doc_id=m.doc_id AND dv.version=m.mv",
+        doc_ids,
+    ).fetchall()
+    return {r["doc_id"]: r["cs"] for r in rows}
+
+
+def _hit(settings, row, score: float, full: bool, last_change) -> dict:
     proj = row["project"]
     content = store.read(settings, row["storage_path"])
     h = {
         "id": row["id"], "feature_key": row["feature_key"], "mem_type": row["mem_type"],
         "scope": "global" if proj == GLOBAL else proj, "title": row["title"],
         "score": round(float(score), 4), "updated_at": row["updated_at"],
-        "version": row["version"], "last_change": _last_change(conn, row["id"]),
+        "version": row["version"], "last_change": last_change,
     }
     if full:
         h["content"] = content
@@ -120,7 +135,7 @@ def get_memory(settings, doc_id: str, full: bool = True) -> dict:
         ).fetchone()
         if not row:
             raise NotFound("메모리를 찾을 수 없습니다.")
-        return _hit(conn, settings, row, 1.0, full)
+        return _hit(settings, row, 1.0, full, _last_change(conn, doc_id))
     finally:
         conn.close()
 
@@ -168,18 +183,24 @@ def recall(settings, query, project=None, limit=8, full=False) -> list[dict]:
         top = _fts_recall(settings, query, scopes, limit)
     if not top:
         return []
+    ids = [doc_id for _, doc_id in top]
     conn = db.connect(settings)
     try:
-        out = []
-        for score, doc_id in top:
-            row = conn.execute(
-                "SELECT * FROM documents WHERE id=? AND mem_type IS NOT NULL AND trashed=0", (doc_id,)
-            ).fetchone()
-            if row:
-                out.append(_hit(conn, settings, row, score, full))
-        return out
+        ph = ",".join("?" * len(ids))
+        rows = conn.execute(
+            f"SELECT * FROM documents WHERE id IN ({ph}) AND mem_type IS NOT NULL AND trashed=0",
+            ids,
+        ).fetchall()
+        changes = _last_changes(conn, ids)  # 배치로 최신 change_summary 조회
     finally:
         conn.close()
+    by_id = {r["id"]: r for r in rows}
+    out = []
+    for score, doc_id in top:  # 점수 순서 유지
+        row = by_id.get(doc_id)
+        if row:
+            out.append(_hit(settings, row, score, full, changes.get(doc_id)))
+    return out
 
 
 def list_memories(settings, scope=None, mem_type=None) -> list[dict]:
