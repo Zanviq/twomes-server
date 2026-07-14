@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot, FilePlus, Save, Trash2, History, Loader2, Search, X, RotateCcw,
   ScrollText, AlertTriangle, Sparkles, FolderOpen, Folder, FolderPlus, ArrowUpDown,
-  ChevronRight, ChevronDown, Home, Plus, Pencil, MoreHorizontal, FolderInput, RefreshCw,
+  ChevronRight, ChevronDown, Home, Plus, Pencil, MoreHorizontal, FolderInput, RefreshCw, Link2,
 } from "lucide-react";
 import { MarkdownView } from "./MarkdownView";
 import { ThreePane } from "./ThreePane";
@@ -78,6 +78,7 @@ export function AidocWorkspace({ openDocId }: { openDocId?: string }) {
   const [moveFolder, setMoveFolder] = useState<string>(""); // "" = 루트
   const [moveFolders, setMoveFolders] = useState<string[]>([]);
   const [reindexing, setReindexing] = useState(false);
+  const [suggest, setSuggest] = useState<string[] | null>(null); // [[위키링크]] 자동완성
 
   const [historyOpen, setHistoryOpen] = useState(false);
   const [history, setHistory] = useState<AidocVersion[] | null>(null);
@@ -327,6 +328,26 @@ export function AidocWorkspace({ openDocId }: { openDocId?: string }) {
   const onEdit = (v: string) => {
     setContent(v);
     setDirty(true);
+    const ta = taRef.current;
+    if (ta) {
+      const before = v.slice(0, ta.selectionStart);
+      const m = before.match(/\[\[([^\[\]\n]*)$/); // [[ 입력 중이면 제목 제안
+      if (m) {
+        const qstr = m[1].toLowerCase();
+        setSuggest(docs.map((d) => d.title).filter((t) => t.toLowerCase().includes(qstr)).slice(0, 6));
+      } else setSuggest(null);
+    }
+  };
+
+  const insertLink = (title: string) => {
+    const ta = taRef.current;
+    if (!ta) return;
+    const pos = ta.selectionStart;
+    const before = content.slice(0, pos).replace(/\[\[[^\[\]\n]*$/, `[[${title}]]`);
+    setSuggest(null);
+    setContent(before + content.slice(pos));
+    setDirty(true);
+    setTimeout(() => ta.focus(), 0);
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -734,11 +755,21 @@ export function AidocWorkspace({ openDocId }: { openDocId?: string }) {
         {current ? (
           <textarea ref={taRef} value={content} onChange={(e) => onEdit(e.target.value)} onKeyDown={onKeyDown}
             onScroll={() => syncScroll(taRef.current, previewRef.current)}
-            placeholder="마크다운으로 작성…"
+            placeholder="마크다운으로 작성… [[ 으로 다른 문서 링크"
             className="flex-1 resize-none bg-transparent p-4 font-mono text-[13.5px] leading-relaxed outline-none placeholder:text-fg-subtle" />
         ) : (
           <div className="flex flex-1 items-center justify-center px-4 text-center text-[13px] text-fg-muted">
             왼쪽에서 문서를 선택하거나 새로 만드세요
+          </div>
+        )}
+        {suggest && suggest.length > 0 && (
+          <div className="absolute bottom-4 left-4 z-10 w-56 overflow-hidden rounded-md border border-line bg-surface shadow-lg">
+            {suggest.map((t) => (
+              <button key={t} onClick={() => insertLink(t)}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] hover:bg-hovered">
+                <Link2 size={13} className="text-accent" /> {t}
+              </button>
+            ))}
           </div>
         )}
       </div>
