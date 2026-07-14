@@ -104,6 +104,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "feature_key" not in cols:
         conn.execute("ALTER TABLE documents ADD COLUMN feature_key TEXT")
     conn.execute("CREATE INDEX IF NOT EXISTS ix_documents_feature ON documents(project, feature_key)")
+    # 도처에서 쓰는 trashed=0 AND mem_type IS (NOT) NULL 필터 + updated_at 정렬 가속
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_documents_live ON documents(trashed, mem_type)")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_documents_updated ON documents(updated_at)")
 
 
 def init_db(settings: Settings) -> None:

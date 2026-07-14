@@ -472,10 +472,14 @@ def export_folder(settings, project=None, folder=None, recursive=True) -> list[d
         if ".." in sub.split("/"):
             raise BadRequest("잘못된 폴더 경로입니다.")
         prefix = f"{base}/{sub}"
+    where = ["trashed=0", "mem_type IS NULL"]; vals: list = []
+    where.append("project=?" if project else "project IS NULL")  # 프로젝트로 선축소(풀스캔 회피)
+    if project:
+        vals.append(project)
     conn = db.connect(settings)
     try:
         rows = conn.execute(
-            "SELECT id,title,storage_path,project FROM documents WHERE trashed=0 AND mem_type IS NULL"
+            f"SELECT id,title,storage_path,project FROM documents WHERE {' AND '.join(where)}", vals
         ).fetchall()
     finally:
         conn.close()
@@ -510,10 +514,14 @@ def _scope_server_docs(settings, project=None, folder=None) -> dict[str, dict]:
         if ".." in sub.split("/"):
             raise BadRequest("잘못된 폴더 경로입니다.")
         prefix = f"{base}/{sub}"
+    where = ["trashed=0", "mem_type IS NULL"]; vals: list = []
+    where.append("project=?" if project else "project IS NULL")  # 프로젝트로 선축소(풀스캔 회피)
+    if project:
+        vals.append(project)
     conn = db.connect(settings)
     try:
         rows = conn.execute(
-            "SELECT id,storage_path,version,project FROM documents WHERE trashed=0 AND mem_type IS NULL"
+            f"SELECT id,storage_path,version,project FROM documents WHERE {' AND '.join(where)}", vals
         ).fetchall()
     finally:
         conn.close()
