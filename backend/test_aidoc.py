@@ -402,6 +402,32 @@ def test_aidoc_graph():
         embeddings.embed_text = orig
 
 
+def test_aidoc_graph_cache():
+    """그래프 캐시: 변경 없으면 동일 객체 반환(캐시 히트), 문서 추가 시 무효화."""
+    from backend.config import Settings
+    from backend.aidoc import db, paths, service, embeddings, graph
+    from backend.aidoc.schemas import CreateDoc
+    s = Settings(); db.init_db(s); paths.ensure_layout(s)
+    graph.clear_cache()
+    a = service.Actor("t")
+    orig = embeddings.embed_text
+    embeddings.embed_text = lambda st, t, task_type=None: [float(len(t or "")), 1.0, 0.0]
+    try:
+        service.create(s, a, CreateDoc(title="CacheA", content="aaa", project="nodi"))
+        g1 = graph.build_graph(s, project="nodi")
+        g2 = graph.build_graph(s, project="nodi")
+        assert g1 is g2  # 변경 없음 → 캐시 히트(동일 객체)
+        n1 = len(g1["nodes"])
+        service.create(s, a, CreateDoc(title="CacheB", content="bbb", project="nodi"))
+        g3 = graph.build_graph(s, project="nodi")
+        assert g3 is not g1 and len(g3["nodes"]) == n1 + 1  # 지문 변경 → 재계산
+        graph.clear_cache()
+        g4 = graph.build_graph(s, project="nodi")
+        assert g4 is not g3 and len(g4["nodes"]) == n1 + 1  # 명시적 무효화 후 재계산
+    finally:
+        embeddings.embed_text = orig
+
+
 def test_sync_content_hash():
     from backend.aidoc import sync
     # 개행 정규화: CRLF/CR/LF 동일 해시
@@ -994,6 +1020,7 @@ if __name__ == "__main__":
     test_reindex_scoped()
     test_aidoc_folders()
     test_aidoc_graph()
+    test_aidoc_graph_cache()
     test_sync_content_hash()
     test_sync_plan_pure()
     test_sync_plan_service_and_mcp()

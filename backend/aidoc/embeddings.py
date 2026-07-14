@@ -158,4 +158,7 @@ def reindex(settings: Settings, projects: list[str] | None = None) -> dict:
             indexed += 1
         else:
             failed += 1
+    if indexed:
+        from . import graph  # 지역 import(순환 회피): 임베딩 변경 → 그래프 캐시 무효화
+        graph.clear_cache()
     return {"indexed": indexed, "skipped": skipped, "failed": failed}
