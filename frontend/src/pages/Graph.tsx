@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import ForceGraph2D from "react-force-graph-2d";
 import { Users, User, Bot, Share2, FolderTree, Link2, ChevronRight, Home, Loader2 } from "lucide-react";
@@ -18,6 +18,10 @@ function rgb(name: string, a = 1): string {
 }
 
 type Mode = "links" | "folders";
+
+// 상태에 의존하지 않는 accessor는 모듈 스코프에 두어 매 렌더 재생성/ prop churn 방지
+const REPLACE_MODE = () => "replace" as const;
+const NODE_VAL = (n: any) => (n.type === "folder" ? 4 + Math.min(6, n.count ?? 0) : 1.6);
 
 export function Graph() {
   const navigate = useNavigate();
@@ -56,12 +60,28 @@ export function Graph() {
     setFolder("");
   }, [source]);
 
+  // 리사이즈: rAF로 디바운스 + 크기 실제 변화가 있을 때만 setState(렌더 폭풍 방지)
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => setSize({ w: el.clientWidth, h: el.clientHeight }));
+    let raf = 0;
+    let last = { w: 0, h: 0 };
+    const ro = new ResizeObserver(() => {
+      if (raf) return; // 다음 프레임까지 관측 폭주를 1회로 합침
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        const w = Math.round(el.clientWidth);
+        const h = Math.round(el.clientHeight);
+        if (w === last.w && h === last.h) return; // 변화 없으면 스킵
+        last = { w, h };
+        setSize({ w, h });
+      });
+    });
     ro.observe(el);
-    return () => ro.disconnect();
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
   }, []);
 
   const colors = useMemo(
@@ -86,15 +106,60 @@ export function Graph() {
   const crumbs = folder ? folder.split("/") : [];
   const crumbPath = (i: number) => crumbs.slice(0, i + 1).join("/");
 
-  const onNodeClick = (n: any) => {
-    if (isAidoc) {
-      navigate(`/notes?aidoc=${encodeURIComponent(n.id)}`); // AI 문서 편집기로
-    } else if (n.type === "folder") {
-      setFolder(n.path); // 폴더로 진입(드릴다운)
-    } else {
-      navigate(`/notes?open=${encodeURIComponent(n.title)}`);
-    }
-  };
+  const onNodeClick = useCallback(
+    (n: any) => {
+      if (isAidoc) {
+        navigate(`/notes?aidoc=${encodeURIComponent(n.id)}`); // AI 문서 편집기로
+      } else if (n.type === "folder") {
+        setFolder(n.path); // 폴더로 진입(드릴다운)
+      } else {
+        navigate(`/notes?open=${encodeURIComponent(n.title)}`);
+      }
+    },
+    [isAidoc, navigate],
+  );
+
+  const linkColor = useCallback(
+    (l: any) => (l.kind === "link" ? colors.strokeNote : colors.link),
+    [colors],
+  );
+  const linkWidth = useCallback(
+    (l: any) => (l.kind === "similar" ? Math.max(0.6, (l.weight ?? 0.7) * 1.6) : 1),
+    [],
+  );
+  const drawNode = useCallback(
+    (node: any, ctx: CanvasRenderingContext2D, scale: number) => {
+      // Nodi 스타일: 소프트 글로우 헤일로 + 코어 원(밝은 채움 + 진한 테두리) + 하단 라벨
+      const isFolder = node.type === "folder";
+      const r = isFolder ? 7 : 5;
+      // 헤일로(글로우)
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, r + 3, 0, 2 * Math.PI);
+      ctx.fillStyle = colors.halo;
+      ctx.fill();
+      // 코어
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, r, 0, 2 * Math.PI);
+      ctx.fillStyle = isFolder ? colors.coreFolder : colors.coreNote;
+      ctx.fill();
+      ctx.lineWidth = 0.9;
+      ctx.strokeStyle = isFolder ? colors.strokeFolder : colors.strokeNote;
+      ctx.stroke();
+      // 라벨(노드 아래) — 너무 축소하면 숨김(폴더는 조금 더 오래 보이도록)
+      // scale=화면 확대율(작을수록 축소). 일반 노드 0.9, 폴더 0.35 미만이면 라벨 생략.
+      const labelMinScale = isFolder ? 0.35 : 0.9;
+      if (scale >= labelMinScale) {
+        const label = isFolder ? `${node.title}${node.count ? ` (${node.count})` : ""}` : node.title;
+        const fontSize = 11 / scale;
+        ctx.font = `${isFolder ? "600 " : ""}${fontSize}px Pretendard, sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        ctx.fillStyle = isFolder ? colors.label : colors.labelMuted;
+        ctx.fillText(label, node.x, node.y + r + 3 / scale);
+      }
+    },
+    [colors],
+  );
 
   const sourceToggle = (
     <div className="inline-flex rounded-md border border-line bg-subtle p-0.5">
@@ -178,40 +243,11 @@ export function Graph() {
             backgroundColor="rgba(0,0,0,0)"
             nodeRelSize={5}
             onNodeClick={onNodeClick}
-            linkColor={(l: any) => (l.kind === "link" ? colors.strokeNote : colors.link)}
-            linkWidth={(l: any) => (l.kind === "similar" ? Math.max(0.6, (l.weight ?? 0.7) * 1.6) : 1)}
-            nodeVal={(n: any) => (n.type === "folder" ? 4 + Math.min(6, n.count ?? 0) : 1.6)}
-            nodeCanvasObjectMode={() => "replace"}
-            nodeCanvasObject={(node: any, ctx, scale) => {
-              // Nodi 스타일: 소프트 글로우 헤일로 + 코어 원(밝은 채움 + 진한 테두리) + 하단 라벨
-              const isFolder = node.type === "folder";
-              const r = isFolder ? 7 : 5;
-              // 헤일로(글로우)
-              ctx.beginPath();
-              ctx.arc(node.x, node.y, r + 3, 0, 2 * Math.PI);
-              ctx.fillStyle = colors.halo;
-              ctx.fill();
-              // 코어
-              ctx.beginPath();
-              ctx.arc(node.x, node.y, r, 0, 2 * Math.PI);
-              ctx.fillStyle = isFolder ? colors.coreFolder : colors.coreNote;
-              ctx.fill();
-              ctx.lineWidth = 0.9;
-              ctx.strokeStyle = isFolder ? colors.strokeFolder : colors.strokeNote;
-              ctx.stroke();
-              // 라벨(노드 아래) — 너무 축소하면 숨김(폴더는 조금 더 오래 보이도록)
-              // scale=화면 확대율(작을수록 축소). 일반 노드 0.9, 폴더 0.35 미만이면 라벨 생략.
-              const labelMinScale = isFolder ? 0.35 : 0.9;
-              if (scale >= labelMinScale) {
-                const label = isFolder ? `${node.title}${node.count ? ` (${node.count})` : ""}` : node.title;
-                const fontSize = 11 / scale;
-                ctx.font = `${isFolder ? "600 " : ""}${fontSize}px Pretendard, sans-serif`;
-                ctx.textAlign = "center";
-                ctx.textBaseline = "top";
-                ctx.fillStyle = isFolder ? colors.label : colors.labelMuted;
-                ctx.fillText(label, node.x, node.y + r + 3 / scale);
-              }
-            }}
+            linkColor={linkColor}
+            linkWidth={linkWidth}
+            nodeVal={NODE_VAL}
+            nodeCanvasObjectMode={REPLACE_MODE}
+            nodeCanvasObject={drawNode}
             cooldownTicks={80}
           />
         )}
