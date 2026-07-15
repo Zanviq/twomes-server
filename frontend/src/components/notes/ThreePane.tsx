@@ -75,15 +75,16 @@ export function ThreePane({
 
   return (
     <div ref={wrapRef} className="flex h-[calc(100vh-9rem)] items-stretch">
-      <div className="min-w-0 shrink-0" style={{ width: treeW }}>
+      {/* 각 래퍼를 flex-col로 만들고 자식 카드를 flex-1/min-h-0로 강제 → 카드가 패널 높이를 꽉 채움 */}
+      <div className="flex min-w-0 shrink-0 flex-col [&>*]:min-h-0 [&>*]:flex-1" style={{ width: treeW }}>
         {left}
       </div>
       <Handle onPointerDown={treeDown} />
-      <div className="min-w-0" style={{ flexGrow: editorFrac, flexBasis: 0 }}>
+      <div className="flex min-w-0 flex-col [&>*]:min-h-0 [&>*]:flex-1" style={{ flexGrow: editorFrac, flexBasis: 0 }}>
         {center}
       </div>
       <Handle onPointerDown={splitDown} />
-      <div className="min-w-0" style={{ flexGrow: 1 - editorFrac, flexBasis: 0 }}>
+      <div className="flex min-w-0 flex-col [&>*]:min-h-0 [&>*]:flex-1" style={{ flexGrow: 1 - editorFrac, flexBasis: 0 }}>
         {right}
       </div>
     </div>
