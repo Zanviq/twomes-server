@@ -103,3 +103,8 @@ HDD 마운트가 선행되어야 함: `sudo mount /dev/sda1 /mnt/hdd` (NTFS면 n
 
 자세한 작업 내역은 [docs/REPORT.md](docs/REPORT.md), 계획은
 [docs/superpowers/plans/2026-07-01-twomes-v2.md](docs/superpowers/plans/2026-07-01-twomes-v2.md) 참고.
+
+## 배포
+
+`main`에 push하면 Pi(셀프호스티드 러너)에서 자동으로 재빌드된다. 설정은
+[docs/auto-deploy.md](docs/auto-deploy.md) 참고.
